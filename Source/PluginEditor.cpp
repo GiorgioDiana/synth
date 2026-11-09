@@ -200,7 +200,7 @@ SixthEditor::SixthEditor(SixthProcessor& p) : AudioProcessorEditor(p),processor(
     addControl("chorusrate","RATE","Chorus modulation speed.",{875,491,128,133},true);
     addControl("chorusdepth","DEPTH","Chorus modulation depth.",{1012,491,128,133},true);
 
-    keyboard.setAvailableRange(36,96); keyboard.setKeyWidth(26.0f); keyboard.setLowestVisibleKey(48);
+    keyboard.setAvailableRange(36,96); keyboard.setKeyWidth(32.0f); keyboard.setLowestVisibleKey(48);
     keyboard.setColour(juce::MidiKeyboardComponent::whiteNoteColourId,cream);
     keyboard.setColour(juce::MidiKeyboardComponent::blackNoteColourId,juce::Colour(0xff13181c));
     keyboard.setColour(juce::MidiKeyboardComponent::keyDownOverlayColourId,red.withAlpha(0.65f));
@@ -221,7 +221,7 @@ void SixthEditor::timerCallback()
     meter=juce::jmax(processor.outputLevel.load(),meter*0.86f);
     presetLabel.setText(processor.isCurrentProgramModified() ? "FACTORY PATCH  /  EDITED" : "FACTORY PATCH",juce::dontSendNotification);
     midiActive=false;
-    for(int note=36;note<=96;++note) midiActive=midiActive || processor.keyboard.isNoteOnForChannels(0xffff,note);
+    for(int note=0;note<=127;++note) midiActive=midiActive || processor.keyboard.isNoteOnForChannels(0xffff,note);
     for(int i=0;i<3;++i) {
         octaveButtons[static_cast<size_t>(i)].setToggleState(juce::roundToInt(read("octave"))==i,juce::dontSendNotification);
         chorusButtons[static_cast<size_t>(i)].setToggleState(juce::roundToInt(read("chorus"))==i,juce::dontSendNotification);
