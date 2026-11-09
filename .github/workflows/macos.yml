@@ -1,0 +1,41 @@
+name: macOS plugins
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure universal AU and VST3
+        run: cmake -S . -B build -G Xcode '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+      - name: Verify universal binaries and sign for local testing
+        shell: bash
+        run: |
+          set -euo pipefail
+          for bundle in build/Sixth_artefacts/Release/{AU/Sixth.component,VST3/Sixth.vst3,Standalone/Sixth.app}; do
+            lipo -verify_arch arm64 x86_64 "$bundle/Contents/MacOS/Sixth"
+            codesign --force --deep --sign - "$bundle"
+            codesign --verify --deep --strict "$bundle"
+          done
+      - name: Audio, MIDI, state and VST3 tests
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Validate Audio Unit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
+          ditto build/Sixth_artefacts/Release/AU/Sixth.component "$HOME/Library/Audio/Plug-Ins/Components/Sixth.component"
+          auval -v aumu Sxth Gdia
+      - name: Package plugins and standalone app
+        run: bash scripts/package-macos.sh build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sixth-macOS
+          if-no-files-found: error
+          path: |
+            build/Sixth-macOS.pkg
+            build/Sixth-macOS.tar.gz
