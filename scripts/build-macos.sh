@@ -8,7 +8,7 @@ fi
 cmake -S . -B build-macos -G Xcode '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
 cmake --build build-macos --config Release --parallel 4
 for bundle in build-macos/Sixth_artefacts/Release/{AU/Sixth.component,VST3/Sixth.vst3,Standalone/Sixth.app}; do
-  lipo -verify_arch arm64 x86_64 "$bundle/Contents/MacOS/Sixth"
+  lipo "$bundle/Contents/MacOS/Sixth" -verify_arch arm64 x86_64
   codesign --force --deep --sign - "$bundle"
   codesign --verify --deep --strict "$bundle"
 done
