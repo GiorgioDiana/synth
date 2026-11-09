@@ -2,13 +2,23 @@
 
 A six-voice, Juno-6-inspired synthesizer instrument built with C++17 and JUCE 8.0.12. Targets macOS Audio Unit and VST3, with a standalone app. Linux VST3 and standalone targets support development and testing.
 
-This first version is an independent analog-inspired design, not a measured circuit emulation or an official Roland product. The oscillator, resonant filter and chorus approximate the instrument's architecture; sound matching, authentic voice calibration and BBD chorus modelling remain future work.
+Sixth is an independent analog-inspired design, not a measured circuit emulation or an official Roland product. The oscillator, resonant filter and chorus approximate the instrument's architecture; sound matching, authentic voice calibration and BBD chorus modelling remain future work.
 
 ## Play
 
 Load Sixth on an instrument track, enable MIDI input, and play notes. The standalone app also has an on-screen keyboard. Six voices are available; additional notes steal older voices. Pitch bend spans two semitones.
 
-The panel exposes saw, pulse, sub-octave and noise levels; pulse width; LFO rate, pitch depth and PWM; a resonant 24 dB/octave low-pass filter with bipolar envelope modulation and keyboard tracking; ADSR; high-pass cutoff; chorus Off/I/II; and output volume. The voice oscillators run at twice the output rate and use PolyBLEP saw/pulse waveforms. Parameter settings are stored with the DAW session. This version does not include a preset browser or hardware SysEx support.
+Version 0.2 adds a resizable modern panel, grouped knobs, filter/envelope illustrations, an output meter and nine factory patches. Double-click a knob to reset it; Shift-drag for fine adjustments. Values can be typed with Hz/kHz, ms/s, cents or percent units. The filter display illustrates the base filter shape; it is not an audio spectrum analyzer.
+
+The sound controls include:
+
+- **Oscillator:** saw/pulse/sub/noise mixer, pulse width, 16'/8'/4' range, fine tune and per-voice analog drift.
+- **Modulation:** sine, triangle, square or sample-and-hold LFO; independent pitch, PWM and filter depths; delayed fade-in and key retrigger. MIDI mod wheel (CC1) adds adjustable vibrato; pitch bend remains ±2 semitones.
+- **Filter:** resonant 24 dB/octave low-pass, high-pass, pre-filter drive, bipolar envelope depth, keyboard tracking and velocity sensitivity.
+- **Envelopes:** independent amplifier and filter ADSRs, so a long pad can have a fast filter pluck or a short note can open slowly.
+- **Chorus/output:** modes Off/I/II, continuous mix/rate/depth, true stereo chorus width, amplitude velocity response and output level.
+
+Factory patches cover strings, bass, brass, plucks, pads, leads, resonant steps and organ. The voice oscillators run at twice the output rate and use PolyBLEP saw/pulse waveforms. DAW sessions save every control and the selected factory patch. Existing v0.1 parameter IDs and order are retained; old shared-envelope sessions are migrated into matching amp/filter envelopes. Expanded chorus/drift processing means this is not a bit-for-bit reconstruction of the old render. Hardware SysEx, arpeggiator, mono/glide/unison modes and user-preset file import/export are not implemented yet.
 
 ## Build on your Mac
 
@@ -44,7 +54,7 @@ ctest --test-dir /workspace/.synth-env/synth-build --output-on-failure
 
 On another Linux machine, install GCC/Clang, CMake, Ninja, pkg-config and JUCE's ALSA, freetype/fontconfig and X11 development dependencies, then configure with `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release`. Browser, curl and OpenGL support are unused.
 
-The tests exercise polyphonic MIDI rendering and voice stealing, release-to-silence at three sample rates, parameter-state restoration, filter/chorus stability, and scanning/loading the actual VST3 bundle. They do not establish acoustic fidelity to a hardware Juno-6 or Mac DAW compatibility.
+The tests exercise octave frequency ratios, independent filter envelopes, filter LFO, velocity, chorus mix/width, level-matched drive, audible factory patches, legacy session migration, polyphonic rendering/release, editor painting, state restoration and scanning/loading the actual VST3 bundle. They do not establish acoustic fidelity to a hardware Juno-6 or Mac DAW compatibility.
 
 ## Licensing
 

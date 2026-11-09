@@ -22,10 +22,10 @@ jobs:
             build/SynthTests_artefacts/Release/SynthTests
       - name: Configure universal AU and VST3
         if: steps.binaries.outputs.cache-hit != 'true'
-        run: cmake -S . -B build -G Xcode '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
+        run: bash scripts/ci-check.sh 'Configure universal AU and VST3' cmake -S . -B build -G Xcode '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
       - name: Build
         if: steps.binaries.outputs.cache-hit != 'true'
-        run: cmake --build build --config Release --parallel 4
+        run: bash scripts/ci-check.sh 'Build macOS binaries' cmake --build build --config Release --parallel 4
       - name: Retain compiled binaries before validation
         if: steps.binaries.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -40,40 +40,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          exec > >(tee -a "$GITHUB_STEP_SUMMARY") 2>&1
           for bundle in build/Sixth_artefacts/Release/{AU/Sixth.component,VST3/Sixth.vst3,Standalone/Sixth.app}; do
-            lipo "$bundle/Contents/MacOS/Sixth" -archs
-            lipo "$bundle/Contents/MacOS/Sixth" -verify_arch arm64 x86_64
-            codesign --force --deep --sign - "$bundle"
-            codesign --verify --deep --strict "$bundle"
+            bash scripts/ci-check.sh "$bundle architectures" lipo "$bundle/Contents/MacOS/Sixth" -archs
+            bash scripts/ci-check.sh "$bundle universal verification" lipo "$bundle/Contents/MacOS/Sixth" -verify_arch arm64 x86_64
+            bash scripts/ci-check.sh "$bundle signing" codesign --force --deep --sign - "$bundle"
+            bash scripts/ci-check.sh "$bundle signature verification" codesign --verify --deep --strict "$bundle"
           done
       - name: Audio, MIDI, state and VST3 tests
-        run: build/SynthTests_artefacts/Release/SynthTests "$PWD/build/Sixth_artefacts/Release/VST3/Sixth.vst3"
+        run: bash scripts/ci-check.sh 'Audio, MIDI, state and VST3 tests' build/SynthTests_artefacts/Release/SynthTests "$PWD/build/Sixth_artefacts/Release/VST3/Sixth.vst3"
       - name: Validate Audio Unit
-        shell: bash
-        run: |
-          set -euo pipefail
-          exec > >(tee -a "$GITHUB_STEP_SUMMARY") 2>&1
-          echo '### Audio Unit validation'
-          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
-          ditto build/Sixth_artefacts/Release/AU/Sixth.component "$HOME/Library/Audio/Plug-Ins/Components/Sixth.component"
-          /usr/libexec/PlistBuddy -c 'Print :AudioComponents:0' "$HOME/Library/Audio/Plug-Ins/Components/Sixth.component/Contents/Info.plist"
-          auval -a > "$RUNNER_TEMP/sixth-components.txt"
-          if ! grep -Eq 'aumu[[:space:]]+Sxth[[:space:]]+Gdia' "$RUNNER_TEMP/sixth-components.txt"; then
-            echo 'Refreshing AudioComponentRegistrar to discover the newly installed AU.'
-            killall AudioComponentRegistrar || true
-            for attempt in {1..10}; do
-              auval -a > "$RUNNER_TEMP/sixth-components.txt"
-              if grep -Eq 'aumu[[:space:]]+Sxth[[:space:]]+Gdia' "$RUNNER_TEMP/sixth-components.txt"; then
-                break
-              fi
-              sleep 2
-            done
-          fi
-          grep -E 'Sxth|Sixth' "$RUNNER_TEMP/sixth-components.txt" || true
-          auval -v aumu Sxth Gdia
+        run: bash scripts/ci-check.sh 'Audio Unit validation' bash scripts/validate-au.sh build
       - name: Package plugins and standalone app
-        run: bash scripts/package-macos.sh build
+        run: bash scripts/ci-check.sh 'Package macOS installer' bash scripts/package-macos.sh build
       - uses: actions/upload-artifact@v4
         with:
           name: Sixth-macOS
