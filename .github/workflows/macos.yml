@@ -8,10 +8,34 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Identify Apple toolchain
+        id: toolchain
+        run: echo "key=$(xcodebuild -version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: binaries
+        with:
+          key: sixth-macos15-${{ runner.arch }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('CMakeLists.txt', 'Source/**', 'Tests/**') }}
+          path: |
+            build/Sixth_artefacts/Release/AU
+            build/Sixth_artefacts/Release/VST3
+            build/Sixth_artefacts/Release/Standalone
+            build/SynthTests_artefacts/Release/SynthTests
       - name: Configure universal AU and VST3
+        if: steps.binaries.outputs.cache-hit != 'true'
         run: cmake -S . -B build -G Xcode '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
       - name: Build
+        if: steps.binaries.outputs.cache-hit != 'true'
         run: cmake --build build --config Release --parallel 4
+      - name: Retain compiled binaries before validation
+        if: steps.binaries.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ steps.binaries.outputs.cache-primary-key }}
+          path: |
+            build/Sixth_artefacts/Release/AU
+            build/Sixth_artefacts/Release/VST3
+            build/Sixth_artefacts/Release/Standalone
+            build/SynthTests_artefacts/Release/SynthTests
       - name: Verify universal binaries and sign for local testing
         shell: bash
         run: |
@@ -24,13 +48,29 @@ jobs:
             codesign --verify --deep --strict "$bundle"
           done
       - name: Audio, MIDI, state and VST3 tests
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: build/SynthTests_artefacts/Release/SynthTests "$PWD/build/Sixth_artefacts/Release/VST3/Sixth.vst3"
       - name: Validate Audio Unit
         shell: bash
         run: |
           set -euo pipefail
+          exec > >(tee -a "$GITHUB_STEP_SUMMARY") 2>&1
+          echo '### Audio Unit validation'
           mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
           ditto build/Sixth_artefacts/Release/AU/Sixth.component "$HOME/Library/Audio/Plug-Ins/Components/Sixth.component"
+          /usr/libexec/PlistBuddy -c 'Print :AudioComponents:0' "$HOME/Library/Audio/Plug-Ins/Components/Sixth.component/Contents/Info.plist"
+          auval -a > "$RUNNER_TEMP/sixth-components.txt"
+          if ! grep -Eq 'aumu[[:space:]]+Sxth[[:space:]]+Gdia' "$RUNNER_TEMP/sixth-components.txt"; then
+            echo 'Refreshing AudioComponentRegistrar to discover the newly installed AU.'
+            killall AudioComponentRegistrar || true
+            for attempt in {1..10}; do
+              auval -a > "$RUNNER_TEMP/sixth-components.txt"
+              if grep -Eq 'aumu[[:space:]]+Sxth[[:space:]]+Gdia' "$RUNNER_TEMP/sixth-components.txt"; then
+                break
+              fi
+              sleep 2
+            done
+          fi
+          grep -E 'Sxth|Sixth' "$RUNNER_TEMP/sixth-components.txt" || true
           auval -v aumu Sxth Gdia
       - name: Package plugins and standalone app
         run: bash scripts/package-macos.sh build
