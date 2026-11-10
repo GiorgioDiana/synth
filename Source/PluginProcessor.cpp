@@ -142,8 +142,9 @@ const std::vector<Patch>& patches() {
 
 juce::AudioProcessorValueTreeState::ParameterLayout SixthProcessor::layout() {
     juce::AudioProcessorValueTreeState::ParameterLayout p;
+    int parameterVersion=1;
     auto add=[&](const char* id,const char* name,float lo,float hi,float initial,float skew=1.0f) {
-        p.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{id,1},name,
+        p.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{id,parameterVersion},name,
             juce::NormalisableRange<float>(lo,hi,0.0f,skew),initial,
             juce::AudioParameterFloatAttributes().withStringFromValueFunction([](float v,int) { return juce::String(v,std::abs(v)>=100 ? 0 : 2); })
                 .withValueFromStringFunction([](const juce::String& text) { return text.getFloatValue(); })));
@@ -159,13 +160,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout SixthProcessor::layout() {
     add("hpf","High-pass Hz",20,2000,20,0.3f);
     p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"chorus",1},"Chorus",juce::StringArray{"Off","I","II"},1));
     add("volume","Output",0,1,0.7f);
-    p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"octave",1},"Oscillator range",juce::StringArray{"16'","8'","4'"},1));
+    // AUv2 sorts by version hint before ID: new controls must follow v0.1 automation.
+    parameterVersion=2;
+    p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"octave",2},"Oscillator range",juce::StringArray{"16'","8'","4'"},1));
     add("tune","Fine tune cents",-50,50,0); add("drift","Analog drift",0,1,0.08f); add("drive","Filter drive",0,1,0);
     add("fattack","Filter attack seconds",0.001f,4,0.01f,0.3f); add("fdecay","Filter decay seconds",0.01f,4,0.4f,0.3f);
     add("fsustain","Filter sustain",0,1,0.7f); add("frelease","Filter release seconds",0.01f,4,0.3f,0.3f);
     add("filterlfo","LFO filter depth",0,1,0); add("lfodelay","LFO delay seconds",0,3,0,0.4f);
-    p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"lfoshape",1},"LFO waveform",juce::StringArray{"Sine","Triangle","Square","Sample & Hold"},0));
-    p.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"lfotrigger",1},"LFO retrigger",false));
+    p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"lfoshape",2},"LFO waveform",juce::StringArray{"Sine","Triangle","Square","Sample & Hold"},0));
+    p.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"lfotrigger",2},"LFO retrigger",false));
     add("velocity","Amp velocity",0,1,1); add("filtervelocity","Filter velocity",0,1,0);
     add("wheel","Mod wheel vibrato semitones",0,12,2);
     add("chorusmix","Chorus mix",0,1,0.45f); add("chorusrate","Chorus rate Hz",0.05f,4,0.5f,0.5f);

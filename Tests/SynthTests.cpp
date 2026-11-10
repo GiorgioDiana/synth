@@ -90,6 +90,20 @@ double frequency(const Samples& samples) {
 }
 
 void testExpandedControls() {
+    {
+        SixthProcessor p;
+        const char* legacyIds[]={"saw","pulse","sub","noise","width","cutoff","resonance","env","key","rate","pitch","pwm","attack","decay","sustain","release","hpf","chorus","volume"};
+        const auto& parameters=p.getParameters();
+        check(parameters.size()>19,"Expanded parameters are missing");
+        for(int i=0;i<19;++i) {
+            const auto* parameter=dynamic_cast<const juce::RangedAudioParameter*>(parameters[i]);
+            check(parameter && parameter->paramID==legacyIds[i] && parameter->getVersionHint()==1,
+                  "Published v0.1 parameter ID/order/version changed");
+        }
+        for(int i=19;i<parameters.size();++i)
+            check(parameters[i]->getVersionHint()>1,"New controls would reorder legacy Audio Unit automation");
+        std::cout<<"PASS stable published parameter IDs/order and AU automation versioning\n";
+    }
     const auto reference=capture();
     const auto lower=capture([](SixthProcessor& p){set(p,"octave",0);});
     const auto upper=capture([](SixthProcessor& p){set(p,"octave",2);});
