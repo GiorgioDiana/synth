@@ -17,9 +17,12 @@ struct Settings {
 class Voice final : public juce::SynthesiserVoice {
 public:
     Voice(int index, const std::array<float,16>& wheelValues)
-        : wheels(wheelValues), voiceIndex(index), random(42+index*101), lfoRandom(7+index*37) { held=lfoRandom.nextFloat()*2-1; }
+        : wheels(wheelValues), voiceIndex(index), random(42+index*101), lfoRandom(7+index*37) {
+        held=lfoRandom.nextFloat()*2-1; enabled=index<6;
+    }
     Settings settings {};
-    bool canPlaySound(juce::SynthesiserSound* s) override { return dynamic_cast<Sound*>(s) != nullptr; }
+    bool enabled=true;
+    bool canPlaySound(juce::SynthesiserSound* s) override { return enabled && dynamic_cast<Sound*>(s) != nullptr; }
     void setCurrentPlaybackSampleRate(double rate) override {
         SynthesiserVoice::setCurrentPlaybackSampleRate(rate);
         ampEnvelope.setSampleRate(rate); filterEnvelope.setSampleRate(rate);
@@ -173,19 +176,32 @@ juce::AudioProcessorValueTreeState::ParameterLayout SixthProcessor::layout() {
     add("wheel","Mod wheel vibrato semitones",0,12,2);
     add("chorusmix","Chorus mix",0,1,0.45f); add("chorusrate","Chorus rate Hz",0.05f,4,0.5f,0.5f);
     add("chorusdepth","Chorus depth",0,1,0.4f); add("stereo","Stereo width",0,1,1);
+    // Keep chord-performance controls after all published v0.1/v0.2 AU parameters.
+    juce::StringArray chordNames;
+    for(const auto& bank:SixthChords::banks()) chordNames.add(bank.name);
+    p.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"chordMode",3},"Chord performance",false));
+    p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"chordBank",3},"Chord bank",chordNames,0));
+    p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"chordKey",3},"Chord key",juce::StringArray{"C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"},0));
+    juce::StringArray voicings;
+    for(int i=0;i<6;++i) voicings.add(SixthChords::voicingName(i));
+    p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"chordVoicing",3},"Chord voicing",voicings,0));
+    p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"chordRegister",3},"Chord register",juce::StringArray{"-2","-1","0","+1","+2"},2));
     return p;
 }
 SixthProcessor::SixthProcessor() : AudioProcessor(BusesProperties().withOutput("Output",juce::AudioChannelSet::stereo(),true)),
     parameters(*this,nullptr,"SixthState",layout()) {
-    for(int i=0;i<6;++i) synth.addVoice(new Voice(i,synth.wheels));
+    for(int i=0;i<24;++i) synth.addVoice(new Voice(i,synth.wheels));
     synth.addSound(new Sound()); synth.setNoteStealingEnabled(true);
     (void) patches();
+    chordMapper.prepare(); publishChordDisplay();
 }
 bool SixthProcessor::isBusesLayoutSupported(const BusesLayout& l) const {
     return l.getMainInputChannelSet().isDisabled() && l.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
 }
 void SixthProcessor::prepareToPlay(double sr,int block) {
     synth.allNotesOff(0,false); synth.wheels.fill(0); synth.setCurrentPlaybackSampleRate(sr);
+    chordMapper.prepare(); chordMidi.ensureSize(262144); previousChordMode=false;
+    panicPending.store(false); publishChordDisplay();
     juce::dsp::ProcessSpec spec{sr,static_cast<juce::uint32>(juce::jmax(1,block)),2};
     for(size_t i=0;i<chorus.size();++i) {
         auto mono=spec; mono.numChannels=1;
@@ -196,13 +212,30 @@ void SixthProcessor::prepareToPlay(double sr,int block) {
 }
 void SixthProcessor::processBlock(juce::AudioBuffer<float>& audio,juce::MidiBuffer& midi) {
     juce::ScopedNoDenormals guard;
-    audio.clear(); keyboard.processNextMidiBuffer(midi,0,audio.getNumSamples(),true);
+    audio.clear();
+    const bool panic=panicPending.exchange(false,std::memory_order_acquire);
+    if(panic) { chordMapper.prepare(); synth.allNotesOff(0,false); keyboard.reset(); }
+    keyboard.processNextMidiBuffer(midi,0,audio.getNumSamples(),true);
+    const SixthChords::Mapping mapping {value("chordMode")>=0.5f,
+        juce::roundToInt(value("chordBank")),juce::roundToInt(value("chordKey")),
+        juce::roundToInt(value("chordVoicing")),juce::roundToInt(value("chordRegister"))-2};
+    const bool modeChanged=mapping.enabled!=previousChordMode;
+    if(modeChanged) synth.allNotesOff(0,false);
+    previousChordMode=mapping.enabled;
+    chordMapper.process(midi,chordMidi,mapping);
+    if(panic || modeChanged)
+        for(int channel=1;channel<=16;++channel) synth.handleController(channel,64,0);
+    publishChordDisplay();
     Settings s{value("saw"),value("pulse"),value("sub"),value("noise"),value("width"),value("cutoff"),value("resonance"),value("env"),value("key"),value("rate"),value("pitch"),value("pwm"),
         value("attack"),value("decay"),value("sustain"),value("release"),value("fattack"),value("fdecay"),value("fsustain"),value("frelease"),
         value("tune"),value("drift"),value("drive"),value("filterlfo"),value("lfodelay"),value("velocity"),value("filtervelocity"),value("wheel"),
         juce::roundToInt(value("octave")),juce::roundToInt(value("lfoshape")),value("lfotrigger")>=0.5f};
-    for(int i=0;i<synth.getNumVoices();++i) static_cast<Voice*>(synth.getVoice(i))->settings=s;
-    synth.renderNextBlock(audio,midi,0,audio.getNumSamples());
+    for(int i=0;i<synth.getNumVoices();++i) {
+        auto* voice=static_cast<Voice*>(synth.getVoice(i));
+        voice->settings=s; voice->enabled=i<(mapping.enabled ? 24 : 6);
+    }
+    synth.renderNextBlock(audio,chordMidi,0,audio.getNumSamples());
+    if(mapping.enabled) audio.applyGain(0.65f);
     juce::dsp::AudioBlock<float> block(audio);
     juce::dsp::ProcessContextReplacing<float> context(block);
     highpass.setCutoffFrequency(value("hpf")); highpass.process(context);
@@ -228,6 +261,36 @@ void SixthProcessor::processBlock(juce::AudioBuffer<float>& audio,juce::MidiBuff
     outputLevel.store(juce::jmax(peak,outputLevel.load()*0.85f),std::memory_order_relaxed);
     midi.clear();
 }
+void SixthProcessor::publishChordDisplay() noexcept {
+    // A tiny, bounded lock-free GUI snapshot; sequential consistency also
+    // prevents mixed generations on weakly ordered CPU architectures.
+    chordDisplaySequence.fetch_add(1,std::memory_order_seq_cst);
+    const auto& mapping=chordMapper.lastMapping();
+    const auto notes=chordMapper.lastNotes();
+    const int fields[]={chordMapper.lastSlot(),chordMapper.lastTrigger(),mapping.bank,mapping.key,
+        mapping.voicing,mapping.registerShift,notes.size,notes.notes[0],notes.notes[1],notes.notes[2],
+        notes.notes[3],notes.notes[4],notes.notes[5]};
+    for(size_t i=0;i<chordDisplayValues.size();++i) chordDisplayValues[i].store(fields[i],std::memory_order_seq_cst);
+    chordDisplaySequence.fetch_add(1,std::memory_order_seq_cst);
+    lastChordSlot.store(chordMapper.lastSlot(),std::memory_order_relaxed);
+    lastChordTrigger.store(chordMapper.lastTrigger(),std::memory_order_relaxed);
+    activeChordSlots.store(chordMapper.activeSlots(),std::memory_order_relaxed);
+}
+SixthProcessor::ChordDisplay SixthProcessor::getChordDisplay() const noexcept {
+    for(int attempt=0;attempt<4;++attempt) {
+        const auto before=chordDisplaySequence.load(std::memory_order_seq_cst);
+        if((before&1u)!=0) continue;
+        std::array<int,13> values {};
+        for(size_t i=0;i<values.size();++i) values[i]=chordDisplayValues[i].load(std::memory_order_seq_cst);
+        if(before!=chordDisplaySequence.load(std::memory_order_seq_cst)) continue;
+        ChordDisplay result;
+        result.slot=values[0]; result.trigger=values[1]; result.bank=values[2]; result.key=values[3];
+        result.voicing=values[4]; result.registerShift=values[5]; result.notes.size=values[6];
+        for(int i=0;i<6;++i) result.notes.notes[static_cast<size_t>(i)]=values[static_cast<size_t>(7+i)];
+        return result;
+    }
+    return {};
+}
 int SixthProcessor::getNumPrograms() { return static_cast<int>(patches().size()); }
 const juce::String SixthProcessor::getProgramName(int index) {
     return juce::isPositiveAndBelow(index,getNumPrograms()) ? patches()[static_cast<size_t>(index)].name : juce::String();
@@ -236,7 +299,7 @@ bool SixthProcessor::isCurrentProgramModified() const {
     const auto& patch=patches()[static_cast<size_t>(juce::jlimit(0,static_cast<int>(patches().size())-1,selectedProgram.load()))];
     for(auto* base:getParameters()) {
         const auto* parameter=dynamic_cast<const juce::RangedAudioParameter*>(base);
-        if(!parameter) continue;
+        if(!parameter || parameter->paramID.startsWith("chord")) continue;
         float expected=parameter->getDefaultValue();
         for(const auto& item:patch.values)
             if(parameter->paramID==item.first) expected=parameter->convertTo0to1(item.second);
@@ -246,7 +309,11 @@ bool SixthProcessor::isCurrentProgramModified() const {
 }
 void SixthProcessor::setCurrentProgram(int index) {
     if(!juce::isPositiveAndBelow(index,getNumPrograms())) return;
-    for(auto* parameter:getParameters()) parameter->setValueNotifyingHost(parameter->getDefaultValue());
+    for(auto* parameter:getParameters()) {
+        const auto* named=dynamic_cast<const juce::RangedAudioParameter*>(parameter);
+        if(!named || !named->paramID.startsWith("chord"))
+            parameter->setValueNotifyingHost(parameter->getDefaultValue());
+    }
     for(const auto& item:patches()[static_cast<size_t>(index)].values) {
         auto* parameter=parameters.getParameter(item.first);
         parameter->setValueNotifyingHost(parameter->convertTo0to1(item.second));
@@ -255,7 +322,7 @@ void SixthProcessor::setCurrentProgram(int index) {
 }
 juce::AudioProcessorEditor* SixthProcessor::createEditor() { return new SixthEditor(*this); }
 void SixthProcessor::getStateInformation(juce::MemoryBlock& data) {
-    auto state=parameters.copyState(); state.setProperty("program",selectedProgram.load(),nullptr); state.setProperty("schema",2,nullptr);
+    auto state=parameters.copyState(); state.setProperty("program",selectedProgram.load(),nullptr); state.setProperty("schema",3,nullptr);
     auto xml=state.createXml(); copyXmlToBinary(*xml,data);
 }
 void SixthProcessor::setStateInformation(const void* data,int size) {

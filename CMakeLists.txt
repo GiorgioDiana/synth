@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Sixth VERSION 0.2.0 LANGUAGES C CXX)
+project(Sixth VERSION 0.3.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(NOT JUCE_SOURCE_DIR AND DEFINED ENV{JUCE_SOURCE_DIR})
@@ -21,13 +21,13 @@ juce_add_plugin(Sixth COMPANY_NAME "Giorgio Diana" BUNDLE_ID "com.giorgiodiana.s
   IS_SYNTH TRUE NEEDS_MIDI_INPUT TRUE NEEDS_MIDI_OUTPUT FALSE
   NEEDS_WEB_BROWSER FALSE NEEDS_CURL FALSE COPY_PLUGIN_AFTER_BUILD FALSE
   FORMATS ${synth_formats})
-target_sources(Sixth PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp)
+target_sources(Sixth PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/ChordLibrary.cpp Source/ChordMapper.cpp)
 target_compile_definitions(Sixth PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(Sixth PRIVATE juce::juce_audio_utils juce::juce_dsp)
 include(CTest)
 if(BUILD_TESTING)
   juce_add_console_app(SynthTests PRODUCT_NAME "Sixth tests" NEEDS_WEB_BROWSER FALSE NEEDS_CURL FALSE)
-  target_sources(SynthTests PRIVATE Tests/SynthTests.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp)
+  target_sources(SynthTests PRIVATE Tests/SynthTests.cpp Tests/ChordTests.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/ChordLibrary.cpp Source/ChordMapper.cpp)
   target_include_directories(SynthTests PRIVATE Source)
   target_compile_definitions(SynthTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1)
   target_link_libraries(SynthTests PRIVATE juce::juce_audio_utils juce::juce_dsp)

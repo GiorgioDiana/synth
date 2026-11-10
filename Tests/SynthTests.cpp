@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "ChordTests.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -266,7 +267,9 @@ void testExpandedControls() {
 int main(int argc,char** argv) {
     try {
         juce::ScopedJuceInitialiser_GUI init;
+        const bool chordPreviewMode=argc>4 && juce::String(argv[4])=="chords";
         testExpandedControls();
+        runChordTests();
         SixthProcessor p;
         for(double sr:{44100.0,48000.0,96000.0}) {
             set(p,"release",0.05f); set(p,"chorus",0);
@@ -288,7 +291,22 @@ int main(int argc,char** argv) {
         check(p.parameters.getRawParameterValue("chorus")->load()==2,"State chorus restore failed");
         std::cout<<"PASS parameter state round trip\n";
         {
-            std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor());
+            std::unique_ptr<SixthProcessor> chordPreview;
+            auto* previewProcessor=&p;
+            if(chordPreviewMode) {
+                chordPreview=std::make_unique<SixthProcessor>();
+                chordPreview->setCurrentProgram(8);
+                int bank=0;
+                const auto& banks=SixthChords::banks();
+                for(size_t i=0;i<banks.size();++i) if(juce::String(banks[i].category)=="Bach / Chorale") { bank=static_cast<int>(i); break; }
+                if(argc>5) bank=juce::jlimit(0,static_cast<int>(banks.size())-1,juce::String(argv[5]).getIntValue());
+                set(*chordPreview,"chordMode",1); set(*chordPreview,"chordBank",static_cast<float>(bank));
+                chordPreview->prepareToPlay(48000,256);
+                juce::MidiBuffer trigger; trigger.addEvent(juce::MidiMessage::noteOn(1,48,0.8f),0);
+                render(*chordPreview,40,256,trigger);
+                previewProcessor=chordPreview.get();
+            }
+            std::unique_ptr<juce::AudioProcessorEditor> editor(previewProcessor->createEditor());
             check(editor && editor->getWidth()>=800 && editor->getHeight()>=400,"Editor construction failed");
             juce::Image image(juce::Image::RGB,editor->getWidth(),editor->getHeight(),true);
             juce::Graphics graphics(image); editor->paintEntireComponent(graphics,true);
@@ -326,20 +344,48 @@ int main(int argc,char** argv) {
             juce::WavAudioFormat wav;
             auto writer=wav.createWriterFor(stream,juce::AudioFormatWriterOptions().withSampleRate(48000).withNumChannels(2).withBitsPerSample(24));
             check(writer!=nullptr,"Demo writer unavailable");
-            for(int patch:{1,2,4,7}) {
-                SixthProcessor demo; demo.setCurrentProgram(patch); demo.prepareToPlay(48000,256);
-                for(int b=0;b<750;++b) {
-                    juce::MidiBuffer events;
-                    if(b==0) {
-                        if(patch==2) events.addEvent(juce::MidiMessage::noteOn(1,48,0.8f),0);
-                        else for(int note:{60,64,67}) events.addEvent(juce::MidiMessage::noteOn(1,note,0.8f),0);
+            if(chordPreviewMode) {
+                const char* families[]={"Funk / Neo-soul","Jazz / Evans-inspired","Bach / Chorale","Chopin / Romantic"};
+                const int sounds[]={3,4,8,4};
+                const int slots[4][4]={{0,1,3,0},{2,3,0,11},{0,3,4,0},{0,2,9,11}};
+                for(int section=0;section<4;++section) {
+                    int bank=0;
+                    const auto& banks=SixthChords::banks();
+                    for(size_t i=0;i<banks.size();++i) if(juce::String(banks[i].category)==families[section]) { bank=static_cast<int>(i); break; }
+                    SixthProcessor demo; demo.setCurrentProgram(sounds[section]);
+                    set(demo,"chordMode",1); set(demo,"chordBank",static_cast<float>(bank));
+                    set(demo,"release",0.15f); set(demo,"frelease",0.15f); set(demo,"chorus",0);
+                    demo.prepareToPlay(48000,256);
+                    for(int block=0;block<750;++block) {
+                        juce::MidiBuffer events;
+                        const int begin=block*256,end=begin+256;
+                        for(int beat=0;beat<4;++beat) {
+                            const int on=beat*48000,off=on+36000;
+                            const int key=48+slots[section][beat];
+                            if(on>=begin && on<end) events.addEvent(juce::MidiMessage::noteOn(1,key,0.8f),on-begin);
+                            if(off>=begin && off<end) events.addEvent(juce::MidiMessage::noteOff(1,key),off-begin);
+                        }
+                        juce::AudioBuffer<float> audio(2,256); demo.processBlock(audio,events);
+                        check(writer->writeFromAudioSampleBuffer(audio,0,256),"Chord preview write failed");
                     }
-                    if(b==500) events.addEvent(juce::MidiMessage::allNotesOff(1),0);
-                    juce::AudioBuffer<float> audio(2,256); demo.processBlock(audio,events);
-                    check(writer->writeFromAudioSampleBuffer(audio,0,256),"Demo write failed");
+                }
+                std::cout<<"Rendered chord preview: funk, rootless jazz, chorale, Romantic harmony\n";
+            } else {
+                for(int patch:{1,2,4,7}) {
+                    SixthProcessor demo; demo.setCurrentProgram(patch); demo.prepareToPlay(48000,256);
+                    for(int block=0;block<750;++block) {
+                        juce::MidiBuffer events;
+                        if(block==0) {
+                            if(patch==2) events.addEvent(juce::MidiMessage::noteOn(1,48,0.8f),0);
+                            else for(int note:{60,64,67}) events.addEvent(juce::MidiMessage::noteOn(1,note,0.8f),0);
+                        }
+                        if(block==500) events.addEvent(juce::MidiMessage::allNotesOff(1),0);
+                        juce::AudioBuffer<float> audio(2,256); demo.processBlock(audio,events);
+                        check(writer->writeFromAudioSampleBuffer(audio,0,256),"Demo write failed");
+                    }
                 }
             }
-            std::cout<<"Rendered 16-second factory preview: strings, bass, pluck, resonant steps\n";
+            if(!chordPreviewMode) std::cout<<"Rendered 16-second factory preview: strings, bass, pluck, resonant steps\n";
         }
     } catch(const std::exception& e) { std::cerr<<"FAIL: "<<e.what()<<'\n'; return 1; }
     return 0;

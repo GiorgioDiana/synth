@@ -1,5 +1,6 @@
 #pragma once
 #include "PluginProcessor.h"
+#include "ChordLibrary.h"
 
 class SixthEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
@@ -31,6 +32,20 @@ private:
     private:
         SixthEditor& owner;
     };
+    class ChordPad final : public juce::Component, public juce::SettableTooltipClient
+    {
+    public:
+        ChordPad(SixthEditor& e, int s) : owner(e), slot(s) { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
+        ~ChordPad() override { release(); }
+        void paint(juce::Graphics& g) override;
+        void mouseDown(const juce::MouseEvent&) override;
+        void mouseUp(const juce::MouseEvent&) override { release(); }
+        void release();
+        bool held = false;
+    private:
+        SixthEditor& owner;
+        int slot;
+    };
     struct Control
     {
         juce::String id;
@@ -44,6 +59,17 @@ private:
     void paintEnvelope(juce::Graphics&, juce::Rectangle<float>, const char* prefix);
     void addControl(const char*, const char*, const char*, juce::Rectangle<int>, bool rotary = true, bool horizontal = false);
     void chooseProgram(int);
+    void showChordView(bool);
+    void buildChordControls();
+    void rebuildChordBanks(bool followCurrent);
+    void paintChordPage(juce::Graphics&);
+    void paintChordPad(juce::Graphics&, int, juce::Rectangle<int>, bool);
+    void playChordPad(int, bool);
+    void releaseChordPads();
+    juce::String chordNotes(const SixthChords::Notes&) const;
+    static juce::String inputNoteName(int);
+    int currentChordBank() const;
+
     void chooseParameter(const char*, int);
     float read(const char*) const;
     static juce::String formatValue(const juce::String&, double);
@@ -59,6 +85,16 @@ private:
     juce::Label presetLabel, filterDisplayLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoShapeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> retriggerAttachment;
+    juce::TextButton synthView {"SYNTH"}, chordView {"CHORDS"};
+    juce::TextButton chordEnable {"CHORD MODE OFF"}, panic {"PANIC"};
+    juce::ComboBox chordCategory, chordBanks, chordKey, chordVoicing, chordRegister;
+    juce::StringArray chordCategories;
+    std::array<std::unique_ptr<ChordPad>, 12> chordPads;
+    std::vector<juce::Component*> synthComponents, chordComponents;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> chordEnableAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> chordKeyAttachment, chordVoicingAttachment, chordRegisterAttachment;
+    bool chordPageVisible = false;
+    int lastDisplayedBank = -1;
     juce::MidiKeyboardComponent keyboard;
     juce::TooltipWindow tooltips {this, 650};
     float meter = 0.0f;
