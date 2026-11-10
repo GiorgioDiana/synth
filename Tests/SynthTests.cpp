@@ -302,12 +302,23 @@ int main(int argc,char** argv) {
                 if(argc>5) bank=juce::jlimit(0,static_cast<int>(banks.size())-1,juce::String(argv[5]).getIntValue());
                 set(*chordPreview,"chordMode",1); set(*chordPreview,"chordBank",static_cast<float>(bank));
                 chordPreview->prepareToPlay(48000,256);
-                juce::MidiBuffer trigger; trigger.addEvent(juce::MidiMessage::noteOn(1,48,0.8f),0);
-                render(*chordPreview,40,256,trigger);
                 previewProcessor=chordPreview.get();
             }
             std::unique_ptr<juce::AudioProcessorEditor> editor(previewProcessor->createEditor());
             check(editor && editor->getWidth()>=800 && editor->getHeight()>=400,"Editor construction failed");
+            if(chordPreviewMode) {
+                const int input=argc>6 ? juce::jlimit(24,72,juce::String(argv[6]).getIntValue()) : 48;
+                juce::MidiBuffer trigger; trigger.addEvent(juce::MidiMessage::noteOn(1,input,0.8f),0);
+                render(*chordPreview,40,256,trigger);
+                juce::Thread::sleep(70);
+                juce::Timer::callPendingTimersSynchronously();
+                auto* popup=editor->findChildWithID("chordPopup");
+                // The popup lives in the scaled panel rather than at the editor root.
+                if(popup==nullptr)
+                    for(auto* child:editor->getChildren())
+                        if((popup=child->findChildWithID("chordPopup"))!=nullptr) break;
+                check(popup!=nullptr && popup->isVisible(),"Live chord feedback did not appear");
+            }
             juce::Image image(juce::Image::RGB,editor->getWidth(),editor->getHeight(),true);
             juce::Graphics graphics(image); editor->paintEntireComponent(graphics,true);
             if(argc>2) {
@@ -347,7 +358,8 @@ int main(int argc,char** argv) {
             if(chordPreviewMode) {
                 const char* families[]={"Funk / Neo-soul","Jazz / Evans-inspired","Bach / Chorale","Chopin / Romantic"};
                 const int sounds[]={3,4,8,4};
-                const int slots[4][4]={{0,1,3,0},{2,3,0,11},{0,3,4,0},{0,2,9,11}};
+                // Mix style-core chords with the new lower/upper-page landings.
+                const int triggers[4][4]={{25,49,55,72},{50,51,48,72},{60,26,35,72},{48,50,57,72}};
                 for(int section=0;section<4;++section) {
                     int bank=0;
                     const auto& banks=SixthChords::banks();
@@ -361,7 +373,7 @@ int main(int argc,char** argv) {
                         const int begin=block*256,end=begin+256;
                         for(int beat=0;beat<4;++beat) {
                             const int on=beat*48000,off=on+36000;
-                            const int key=48+slots[section][beat];
+                            const int key=triggers[section][beat];
                             if(on>=begin && on<end) events.addEvent(juce::MidiMessage::noteOn(1,key,0.8f),on-begin);
                             if(off>=begin && off<end) events.addEvent(juce::MidiMessage::noteOff(1,key),off-begin);
                         }

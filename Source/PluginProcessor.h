@@ -28,10 +28,11 @@ public:
     const juce::String getProgramName(int) override;
     bool isCurrentProgramModified() const;
     struct ChordDisplay {
-        int slot=-1,trigger=-1,bank=0,key=0,voicing=0,registerShift=0;
+        int slot=-1,trigger=-1,bank=0,key=0,voicing=0,registerShift=0,layout=0;
         SixthChords::Notes notes;
     };
     ChordDisplay getChordDisplay() const noexcept;
+    bool isSoundingNote(int note) const noexcept;
     void requestPanic() noexcept { panicPending.store(true,std::memory_order_release); }
     void changeProgramName(int, const juce::String&) override {}
     void getStateInformation(juce::MemoryBlock&) override;
@@ -39,7 +40,9 @@ public:
     juce::AudioProcessorValueTreeState parameters;
     juce::MidiKeyboardState keyboard;
     std::atomic<float> outputLevel {0.0f};
-    std::atomic<int> lastChordSlot {-1},lastChordTrigger {-1},activeChordSlots {0};
+    std::atomic<int> lastChordSlot {-1},lastChordTrigger {-1};
+    std::atomic<std::uint64_t> activeChordSlots {0};
+    std::atomic<unsigned> chordGeneration {0};
 private:
     class PerformanceSynth final : public juce::Synthesiser {
     public:
@@ -57,9 +60,12 @@ private:
     SixthChords::Mapper chordMapper;
     juce::MidiBuffer chordMidi;
     bool previousChordMode=false;
+    int previousChordLayout=0;
     std::atomic<bool> panicPending {false};
     std::atomic<unsigned> chordDisplaySequence {0};
-    std::array<std::atomic<int>,13> chordDisplayValues {};
+    std::array<std::atomic<int>,14> chordDisplayValues {};
+    std::array<std::atomic<std::uint32_t>,4> soundingNotes {};
+    void publishSoundingNotes() noexcept;
     std::array<juce::dsp::Chorus<float>,2> chorus;
     juce::dsp::StateVariableTPTFilter<float> highpass;
     juce::SmoothedValue<float> gain;

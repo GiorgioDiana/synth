@@ -6,9 +6,9 @@ Sixth is an independent analog-inspired design, not a measured circuit emulation
 
 ## Play
 
-Load Sixth on an instrument track, enable MIDI input, and play notes. The standalone app also has an on-screen keyboard. Six voices are available; additional notes steal older voices. Pitch bend spans two semitones.
+Load Sixth on an instrument track, enable MIDI input, and play notes. The standalone app also has an on-screen keyboard. Normal mode has six voices; chord mode has up to 24 for overlapping voicings. Additional notes can steal older voices. Pitch bend spans two semitones.
 
-Version 0.2 adds a resizable modern panel, grouped knobs, filter/envelope illustrations, an output meter and nine factory patches. Double-click a knob to reset it; Shift-drag for fine adjustments. Values can be typed with Hz/kHz, ms/s, cents or percent units. The filter display illustrates the base filter shape; it is not an audio spectrum analyzer.
+The synth page provides a resizable modern panel, grouped knobs, filter/envelope illustrations, an output meter and nine factory sound patches. Double-click a knob to reset it; Shift-drag for fine adjustments. Values can be typed with Hz/kHz, ms/s, cents or percent units. The filter display illustrates the base filter shape; it is not an audio spectrum analyzer.
 
 The sound controls include:
 
@@ -20,22 +20,32 @@ The sound controls include:
 
 Factory patches cover strings, bass, brass, plucks, pads, leads, resonant steps and organ. The voice oscillators run at twice the output rate and use PolyBLEP saw/pulse waveforms. DAW sessions save every control and the selected factory patch. Existing v0.1 parameter IDs and order are retained; old shared-envelope sessions are migrated into matching amp/filter envelopes. Expanded chorus/drift processing means this is not a bit-for-bit reconstruction of the old render. Hardware SysEx, arpeggiator, mono/glide/unison modes and user-preset file import/export are not implemented yet. Chord performance is described below.
 
-## Chord performance (v0.3)
+## Chord performance (v0.4)
 
-Open **CHORDS**, choose a style and harmony bank, and enable **CHORD MODE**. Each chromatic input key selects a different chord in that bank. MIDI 48–59 (C3–B3 here) matches the twelve displayed pads; the next keyboard octave plays the same slots an octave higher. Hosts use different octave labels, so the MIDI numbers are authoritative. You can also hold a pad with the mouse to play it. The regular keyboard mode remains available by switching chord mode off.
+Open **CHORDS**, choose **Full C1–C5** layout, select a style/bank and enable **CHORD MODE**. The full range **C1 through C5, inclusive (MIDI 24–72)** contains 49 mapped choices across a broader harmonic palette—not twelve chords repeated by octave. The four pad pages contain 12, 12, 12 and 13 keys. Hold a pad with the mouse or play the corresponding key on a MIDI controller. Notes outside that range play normally, so you can add a melody above or below it.
 
-There are **48 banks with 576 mapped chord slots**, all written for four to six voices. See the [complete bank catalogue](docs/ChordBanks.md). Common harmonies intentionally recur across related palettes. The library includes 10 funk/neo-soul banks, 6 Bill Evans-inspired rootless/modal banks, 8 functional jazz banks, 8 Bach-inspired chorale banks, 8 Chopin-inspired Romantic banks, 4 gospel/soul banks and 4 modal/cinematic banks.
+There are **48 banks × 49 keys = 2,352 mapped chord slots**, with six voicing modes and transposition to all twelve keys. Shared chords and different voicings intentionally recur; this is a slot count, not a claim that every harmony is unique. Styles include 10 funk/neo-soul banks, 6 Bill Evans-inspired jazz banks, 8 functional jazz banks, 8 Bach-inspired chorale banks, 8 Chopin-inspired Romantic banks, 4 gospel/soul banks and 4 modal/cinematic banks. See the [full mapping catalogue](docs/ChordBanks.md).
 
-These are original style-inspired harmonic palettes, not transcriptions of named works. Chorale banks provide four-part harmonic choices; arbitrary key order is not an automatic counterpoint or voice-leading composition system. Rootless jazz banks intentionally omit roots, leaving room for a separate bass part.
+Each palette now includes clear major/minor tonic landings, predominant/turnaround routes, the original bank’s characteristic chords, and borrowed/chromatic bridges. Style is the centre of a bank, not a restriction to one chord type. The central C3–B3 range (MIDI 48–59) preserves its original twelve choices; the other ranges have their own harmonic options. **C1 is a dependable home and B1 is a dominant leading back to it. C5 gives another tonic voicing.** Try those exits when exploring a more colourful part of the map.
 
-**Key** transposes the whole palette. **Voicing** offers Written, Close, Open, Drop 2, Rotate 1 and Rotate 2. Written keeps each bank's curated spacing; the other modes rearrange the same chord tones and preserve doubled voices. Rotate options cycle existing voices rather than claiming formal root-based inversions. **Register** shifts all chords by octaves, in addition to the register selected by your input key. At MIDI limits, complete voicings fold by octaves to retain their notes.
+For an immediate example, choose **Bach / Chorale → Chorale I - Major Cadences**, Key C and Written voicing. C3 (48) → D#3 (51) → E3 (52) → C3 (48) plays C–F–G7–C; C1 (24) or C5 (72) is also available as a tonic landing. In **Evans / Rootless Major A**, D3 → D#3 → C3 → B3 plays Dm9–G13–Cmaj9–C6/9, while its new surrounding ranges provide rooted homes and more routes onward.
 
-For an immediate example, choose **Bach / Chorale → Chorale I - Major Cadences**, Key C and Written voicing. Play C3 (48), D#3 (51), E3 (52), C3 (48) for C–F–G7–C. In **Evans / Rootless Major A**, D3 (50), D#3 (51), C3 (48), B3 (59) gives Dm9–G13–Cmaj9–C6/9. The pad labels show the actual chord and its notes, so each bank's different mapping is visible.
+**Key** transposes the whole bank. **Voicing** offers Written, Close, Open, Drop 2, Rotate 1 and Rotate 2; these rearrange the same chord tones and retain doubled voices. Rotate options cycle existing voices rather than promising a formal root-based inversion. **Register** moves the actual sounding voicing by octaves. In Full mode, moving to another input octave selects different harmony rather than automatically raising the same twelve chords. At extreme MIDI limits, complete voicings fold by octaves to retain all notes.
 
-Harmony banks are independent from the **Sound Patch** browser: changing timbre preserves the chosen bank, key, voicing and chord-mode setting. DAW sessions save both. Held keys retain the notes captured when they were pressed, even if you change the bank before releasing them. Shared common tones remain held until their last input key is released. Sustain, pitch bend, mod wheel and MIDI channels are preserved; **PANIC** stops held/sustained notes. Switching chord mode releases existing voices. Chord mode uses up to 24 voices for overlapping voicings; normal mode retains the six-voice behavior. Extreme overlap can still steal older voices.
+### See what you are playing
 
-The expansion happens inside Sixth: the DAW records incoming trigger keys, not an exported stream of generated chord MIDI. Chord mode is disabled by default when loading older sessions, and its AU parameters follow the published v0.1/v0.2 controls to preserve their automation order.
+- **Amber** marks the input/trigger key.
+- **Teal** marks the notes sounding in the chord, including notes generated by the pads.
+- A **split colour** marks a key that is both input and output.
+- The chord/input readout identifies the actual played chord and its trigger note/MIDI number, whether you use pads or a MIDI controller, on either the Synth or Chords page.
 
+Harmony banks remain independent from the **Sound Patch** browser: changing timbre preserves the bank, key, voicing and mode. DAW sessions save both. Held keys release the chord captured when they were pressed, even across a bank change; shared common tones remain held until their last input owner releases. Sustain, pitch bend, mod wheel and MIDI channels are preserved. **PANIC** stops held/sustained notes; switching chord mode releases existing voices. Chord mode provides up to 24 voices; normal mode retains six. Extreme overlap can still steal older voices.
+
+### Existing sessions
+
+**Legacy12** preserves the v0.3 twelve-slot layout and its octave transpositions. Previously saved chord sessions reopen in Legacy12 so recorded trigger notes retain their original harmony. **Select Full C1–C5 in an existing project to use the new expanded maps.** The original central octave matches in both layouts. Chord mode remains off when restoring older non-chord sessions, and existing AU parameter order is retained.
+
+These are original style-inspired harmonic palettes, not transcriptions of named works or performances. Chorale banks retain a four-part core but can include colours from other styles; arbitrary key order is not an automatic counterpoint composition system. Rootless jazz choices intentionally leave room for a bass part. Chord expansion happens inside Sixth: the DAW normally records incoming trigger keys, not an exported generated-MIDI stream.
 
 ## Build on your Mac
 
@@ -71,7 +81,7 @@ ctest --test-dir /workspace/.synth-env/synth-build --output-on-failure
 
 On another Linux machine, install GCC/Clang, CMake, Ninja, pkg-config and JUCE's ALSA, freetype/fontconfig and X11 development dependencies, then configure with `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release`. Browser, curl and OpenGL support are unused.
 
-The tests validate all chord banks/voicings/transpositions, mapped MIDI lifetimes and channel/timing behavior, actual chord audio, UI pad lifecycle and state recall, as well as octave frequency ratios, independent filter envelopes, filter LFO, velocity, chorus mix/width, level-matched drive, audible factory patches, legacy session migration, polyphonic rendering/release, editor painting, state restoration and scanning/loading the actual VST3 bundle. They do not establish acoustic fidelity to a hardware Juno-6 or Mac DAW compatibility.
+The tests validate expanded and legacy chord maps, voicings/transpositions, mapped MIDI lifetimes and channel/timing behavior, actual chord audio, UI pad lifecycle, input/output note feedback and state recall, as well as octave frequency ratios, independent filter envelopes, filter LFO, velocity, chorus mix/width, level-matched drive, audible factory patches, legacy session migration, polyphonic rendering/release, editor painting, state restoration and scanning/loading the actual VST3 bundle. They do not establish acoustic fidelity to a hardware Juno-6 or Mac DAW compatibility.
 
 ## Licensing
 

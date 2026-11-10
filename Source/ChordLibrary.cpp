@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
+#include <utility>
 
 namespace SixthChords {
 namespace {
@@ -10,7 +11,11 @@ namespace {
 // spread Romantic basses, suspended funk and extended soul colors are deliberately distinct.
 // A bank is a related set of choices, not a guarantee of strict counterpoint in every order.
 // Published chordBank values follow this order: append new banks, never reorder them.
-constexpr Bank library[] = {
+struct OriginalBank {
+    const char* name; const char* category; const char* description;
+    std::array<Chord, legacyBankSize> chords;
+};
+constexpr OriginalBank originalLibrary[] = {
     {"Funk / Ninth Pocket", "Funk / Neo-soul",
      "Rooted dominant ninths and thirteenths, sharp-nine grit and a six-nine landing.", {{
         {"C9", {{48, 55, 58, 62, 64, 0}}, 5},
@@ -732,7 +737,352 @@ constexpr Bank library[] = {
         {"Cm6/9", {{48, 55, 57, 62, 63, 0}}, 5},
     }}},
 };
-constexpr int librarySize = static_cast<int>(sizeof(library)/sizeof(library[0]));
+constexpr int librarySize = static_cast<int>(sizeof(originalLibrary)/sizeof(originalLibrary[0]));
+// C1-C5 is a harmonic map, not four transpositions of one octave.
+// Keep the published v0.3 palette at C3-B3; add roots and exits around its style.
+// Every family has both rooted C/Cm homes and several dominant/predominant routes.
+constexpr Chord supplements[] = {
+    {"A7", {{45, 55, 61, 64, 0, 0}}, 4},
+    {"A7#9", {{45, 57, 61, 67, 72, 0}}, 5},
+    {"A7alt", {{45, 61, 63, 67, 70, 0}}, 5},
+    {"A7b9", {{55, 58, 61, 64, 0, 0}}, 4},
+    {"Ab", {{44, 51, 56, 60, 0, 0}}, 4},
+    {"Ab13", {{44, 60, 66, 70, 77, 0}}, 5},
+    {"Ab6/9", {{44, 56, 60, 65, 70, 0}}, 5},
+    {"Abmaj7", {{44, 55, 60, 63, 0, 0}}, 4},
+    {"Abmaj9", {{44, 56, 60, 63, 67, 70}}, 6},
+    {"Am", {{45, 52, 57, 60, 0, 0}}, 4},
+    {"Am11", {{45, 57, 60, 62, 67, 71}}, 6},
+    {"Am7", {{45, 52, 55, 60, 0, 0}}, 4},
+    {"Am7b5", {{45, 57, 60, 63, 67, 0}}, 5},
+    {"Am9", {{45, 57, 60, 64, 67, 71}}, 6},
+    {"B7alt", {{51, 57, 60, 62, 0, 0}}, 4},
+    {"Bb", {{46, 53, 58, 62, 0, 0}}, 4},
+    {"Bb13", {{46, 62, 68, 72, 79, 0}}, 5},
+    {"Bb7", {{46, 56, 62, 65, 0, 0}}, 4},
+    {"Bb9", {{46, 58, 62, 68, 72, 0}}, 5},
+    {"Bbmaj7", {{46, 53, 57, 62, 0, 0}}, 4},
+    {"Bbmaj9", {{46, 58, 62, 65, 69, 72}}, 6},
+    {"Bdim7", {{47, 53, 56, 62, 0, 0}}, 4},
+    {"Bm7b5", {{47, 53, 57, 62, 0, 0}}, 4},
+    {"C", {{48, 55, 60, 64, 0, 0}}, 4},
+    {"C#dim7", {{49, 55, 58, 64, 0, 0}}, 4},
+    {"C/E", {{40, 55, 60, 64, 0, 0}}, 4},
+    {"C/G", {{43, 52, 60, 67, 0, 0}}, 4},
+    {"C13", {{48, 58, 62, 64, 69, 0}}, 5},
+    {"C6", {{48, 55, 57, 64, 0, 0}}, 4},
+    {"C6/9", {{48, 55, 57, 62, 64, 0}}, 5},
+    {"C6/9#11", {{48, 57, 62, 64, 66, 0}}, 5},
+    {"C7sus4", {{48, 55, 58, 65, 0, 0}}, 4},
+    {"C9sus4", {{48, 55, 58, 62, 65, 0}}, 5},
+    {"Cm", {{48, 55, 60, 63, 0, 0}}, 4},
+    {"Cm/Eb", {{39, 55, 60, 63, 0, 0}}, 4},
+    {"Cm/G", {{43, 51, 60, 67, 0, 0}}, 4},
+    {"Cm11", {{48, 58, 62, 63, 65, 0}}, 5},
+    {"Cm6", {{48, 55, 57, 63, 0, 0}}, 4},
+    {"Cm6/9", {{48, 55, 57, 62, 63, 0}}, 5},
+    {"Cm7", {{48, 55, 58, 63, 0, 0}}, 4},
+    {"Cm9", {{48, 55, 58, 62, 63, 0}}, 5},
+    {"CmMaj7", {{48, 55, 59, 63, 0, 0}}, 4},
+    {"Cmaj7", {{48, 55, 59, 64, 0, 0}}, 4},
+    {"Cmaj9", {{48, 55, 59, 62, 64, 0}}, 5},
+    {"Cmaj9#11", {{48, 59, 62, 64, 66, 67}}, 6},
+    {"D13", {{50, 60, 64, 66, 71, 0}}, 5},
+    {"D7", {{38, 54, 57, 60, 0, 0}}, 4},
+    {"D7/F#", {{42, 50, 57, 60, 0, 0}}, 4},
+    {"D7alt", {{50, 60, 63, 66, 68, 0}}, 5},
+    {"D7b9", {{38, 54, 57, 60, 63, 0}}, 5},
+    {"D9", {{50, 57, 60, 64, 66, 0}}, 5},
+    {"Db", {{37, 53, 56, 61, 0, 0}}, 4},
+    {"Db/F", {{41, 49, 56, 61, 0, 0}}, 4},
+    {"Db13", {{49, 65, 71, 75, 82, 0}}, 5},
+    {"Db7", {{49, 56, 59, 65, 0, 0}}, 4},
+    {"Db9", {{37, 53, 56, 59, 63, 0}}, 5},
+    {"Dbmaj7", {{49, 56, 60, 65, 0, 0}}, 4},
+    {"Dbmaj9", {{49, 56, 60, 63, 65, 0}}, 5},
+    {"Dm", {{50, 57, 62, 65, 0, 0}}, 4},
+    {"Dm/F", {{41, 50, 57, 62, 0, 0}}, 4},
+    {"Dm11", {{50, 60, 64, 65, 67, 0}}, 5},
+    {"Dm7", {{50, 57, 60, 65, 0, 0}}, 4},
+    {"Dm7b5", {{50, 56, 60, 65, 0, 0}}, 4},
+    {"Dm9", {{50, 57, 60, 64, 65, 0}}, 5},
+    {"Dmaj9/C", {{48, 62, 66, 69, 73, 76}}, 6},
+    {"E7alt", {{56, 62, 65, 67, 0, 0}}, 4},
+    {"E7b9", {{50, 53, 56, 59, 0, 0}}, 4},
+    {"Eb", {{39, 51, 55, 58, 0, 0}}, 4},
+    {"Eb6/9", {{51, 58, 60, 65, 67, 0}}, 5},
+    {"Eb9", {{39, 55, 61, 65, 70, 0}}, 5},
+    {"Ebmaj7", {{39, 55, 58, 62, 0, 0}}, 4},
+    {"Ebmaj9", {{51, 58, 62, 65, 67, 0}}, 5},
+    {"Em", {{52, 55, 59, 64, 0, 0}}, 4},
+    {"Em7", {{52, 59, 62, 67, 0, 0}}, 4},
+    {"Em7b5", {{40, 55, 58, 62, 0, 0}}, 4},
+    {"Em9", {{52, 59, 62, 66, 67, 0}}, 5},
+    {"F", {{41, 53, 57, 60, 0, 0}}, 4},
+    {"F#dim7", {{42, 51, 57, 60, 0, 0}}, 4},
+    {"F/A", {{45, 53, 60, 65, 0, 0}}, 4},
+    {"F13", {{41, 57, 63, 67, 74, 0}}, 5},
+    {"F13sus4", {{41, 58, 63, 67, 74, 0}}, 5},
+    {"F6/9", {{41, 57, 60, 62, 67, 0}}, 5},
+    {"F9", {{41, 53, 57, 63, 67, 0}}, 5},
+    {"F9sus4", {{41, 53, 58, 63, 67, 0}}, 5},
+    {"Fm", {{41, 53, 56, 60, 0, 0}}, 4},
+    {"Fm/Ab", {{44, 53, 60, 65, 0, 0}}, 4},
+    {"Fm6", {{41, 53, 56, 60, 62, 0}}, 5},
+    {"Fm9", {{41, 53, 56, 60, 63, 67}}, 6},
+    {"Fmaj7", {{41, 53, 57, 60, 64, 0}}, 5},
+    {"Fmaj7#11", {{41, 53, 57, 59, 64, 0}}, 5},
+    {"Fmaj9", {{53, 60, 64, 67, 69, 0}}, 5},
+    {"Fr+6", {{44, 60, 62, 66, 0, 0}}, 4},
+    {"G", {{43, 55, 59, 62, 0, 0}}, 4},
+    {"G13", {{43, 59, 65, 69, 76, 0}}, 5},
+    {"G13sus4", {{43, 60, 65, 69, 76, 0}}, 5},
+    {"G7", {{43, 53, 59, 62, 0, 0}}, 4},
+    {"G7#5", {{43, 55, 59, 63, 65, 0}}, 5},
+    {"G7#9", {{43, 55, 59, 65, 70, 0}}, 5},
+    {"G7/B", {{47, 53, 55, 62, 0, 0}}, 4},
+    {"G7alt", {{43, 59, 63, 65, 68, 0}}, 5},
+    {"G7b9", {{43, 55, 59, 65, 68, 0}}, 5},
+    {"G7sus4", {{43, 55, 60, 62, 65, 0}}, 5},
+    {"G9", {{43, 55, 59, 65, 69, 0}}, 5},
+    {"Ger+6", {{44, 60, 63, 66, 0, 0}}, 4},
+    {"Gm7", {{43, 55, 58, 62, 65, 0}}, 5},
+    {"Gm9", {{43, 53, 57, 58, 62, 0}}, 5},
+    {"It+6", {{44, 60, 66, 72, 0, 0}}, 4},
+};
+enum class Family { Tonal, Funk, Jazz, Chorale, Romantic, Gospel, Modal };
+constexpr int tonalMajor[37] = {
+    23, 25, 26, 28, 42, 43, 9, 11, 76, 88, 33, 95, // C | C/E | C/G | C6 | Cmaj7 | Cmaj9 | Am | Am7 | F | Fmaj7 | Cm | G7
+    58, 61, 63, 95, 102, 93, 11, 0, 3, 46, 47, 25, // Dm | Dm7 | Dm9 | G7 | G9 | G13 | Am7 | A7 | A7b9 | D7 | D7/F# | C/E
+    86, 7, 18, 71, 56, 54, 21, 24, 77, 66, 13, 29, // Fm6 | Abmaj7 | Bb9 | Ebmaj9 | Dbmaj7 | Db7 | Bdim7 | C#dim7 | F#dim7 | E7b9 | Am9 | C6/9
+    23 // final tonic
+};
+constexpr int tonalMinor[37] = {
+    33, 34, 35, 37, 39, 40, 67, 70, 4, 84, 23, 100, // Cm | Cm/Eb | Cm/G | Cm6 | Cm7 | Cm9 | Eb | Ebmaj7 | Ab | Fm | C | G7b9
+    62, 100, 39, 84, 86, 17, 70, 7, 49, 104, 21, 34, // Dm7b5 | G7b9 | Cm7 | Fm | Fm6 | Bb7 | Ebmaj7 | Abmaj7 | D7b9 | Gm7 | Bdim7 | Cm/Eb
+    52, 8, 16, 71, 88, 61, 99, 101, 103, 91, 65, 43, // Db/F | Abmaj9 | Bb13 | Ebmaj9 | Fmaj7 | Dm7 | G7alt | G7sus4 | Ger+6 | Fr+6 | E7alt | Cmaj9
+    33 // final tonic
+};
+constexpr int funkMajor[37] = {
+    23, 29, 27, 42, 43, 31, 11, 13, 82, 81, 33, 95, // C | C6/9 | C13 | Cmaj7 | Cmaj9 | C7sus4 | Am7 | Am9 | F9 | F6/9 | Cm | G7
+    63, 60, 102, 93, 101, 32, 13, 1, 50, 45, 79, 28, // Dm9 | Dm11 | G9 | G13 | G7sus4 | C9sus4 | Am9 | A7#9 | D9 | D13 | F13 | C6
+    53, 5, 16, 69, 87, 36, 97, 96, 24, 65, 3, 29, // Db13 | Ab13 | Bb13 | Eb9 | Fm9 | Cm11 | G7#9 | G7#5 | C#dim7 | E7alt | A7b9 | C6/9
+    23 // final tonic
+};
+constexpr int funkMinor[37] = {
+    33, 38, 36, 37, 39, 41, 68, 71, 6, 87, 23, 100, // Cm | Cm6/9 | Cm11 | Cm6 | Cm7 | CmMaj7 | Eb6/9 | Ebmaj9 | Ab6/9 | Fm9 | C | G7b9
+    62, 100, 40, 87, 80, 16, 71, 8, 50, 105, 21, 37, // Dm7b5 | G7b9 | Cm9 | Fm9 | F13sus4 | Bb13 | Ebmaj9 | Abmaj9 | D9 | Gm9 | Bdim7 | Cm6
+    55, 5, 16, 69, 90, 63, 99, 101, 77, 65, 43, 38, // Db9 | Ab13 | Bb13 | Eb9 | Fmaj9 | Dm9 | G7alt | G7sus4 | F#dim7 | E7alt | Cmaj9 | Cm6/9
+    33 // final tonic
+};
+constexpr int jazzMajor[37] = {
+    23, 25, 26, 28, 42, 43, 9, 11, 76, 88, 33, 95, // C | C/E | C/G | C6 | Cmaj7 | Cmaj9 | Am | Am7 | F | Fmaj7 | Cm | G7
+    63, 93, 43, 13, 75, 3, 60, 99, 90, 45, 22, 65, // Dm9 | G13 | Cmaj9 | Am9 | Em9 | A7b9 | Dm11 | G7alt | Fmaj9 | D13 | Bm7b5 | E7alt
+    53, 8, 87, 16, 71, 38, 100, 97, 77, 24, 1, 29, // Db13 | Abmaj9 | Fm9 | Bb13 | Ebmaj9 | Cm6/9 | G7b9 | G7#9 | F#dim7 | C#dim7 | A7#9 | C6/9
+    23 // final tonic
+};
+constexpr int jazzMinor[37] = {
+    33, 34, 35, 37, 39, 40, 67, 70, 4, 84, 23, 100, // Cm | Cm/Eb | Cm/G | Cm6 | Cm7 | Cm9 | Eb | Ebmaj7 | Ab | Fm | C | G7b9
+    62, 100, 41, 87, 16, 71, 8, 49, 105, 74, 2, 63, // Dm7b5 | G7b9 | CmMaj7 | Fm9 | Bb13 | Ebmaj9 | Abmaj9 | D7b9 | Gm9 | Em7b5 | A7alt | Dm9
+    57, 5, 90, 63, 99, 101, 65, 3, 21, 77, 43, 38, // Dbmaj9 | Ab13 | Fmaj9 | Dm9 | G7alt | G7sus4 | E7alt | A7b9 | Bdim7 | F#dim7 | Cmaj9 | Cm6/9
+    33 // final tonic
+};
+constexpr int choraleMajor[37] = {
+    23, 25, 26, 28, 42, 43, 9, 11, 76, 88, 33, 95, // C | C/E | C/G | C6 | Cmaj7 | Cmaj9 | Am | Am7 | F | Fmaj7 | Cm | G7
+    58, 59, 76, 78, 92, 95, 98, 26, 0, 47, 72, 9, // Dm | Dm/F | F | F/A | G | G7 | G7/B | C/G | A7 | D7/F# | Em | Am
+    84, 4, 15, 67, 52, 21, 24, 77, 106, 91, 103, 28, // Fm | Ab | Bb | Eb | Db/F | Bdim7 | C#dim7 | F#dim7 | It+6 | Fr+6 | Ger+6 | C6
+    23 // final tonic
+};
+constexpr int choraleMinor[37] = {
+    33, 34, 35, 37, 39, 40, 67, 70, 4, 84, 23, 100, // Cm | Cm/Eb | Cm/G | Cm6 | Cm7 | Cm9 | Eb | Ebmaj7 | Ab | Fm | C | G7b9
+    62, 100, 33, 84, 85, 15, 67, 4, 104, 47, 21, 35, // Dm7b5 | G7b9 | Cm | Fm | Fm/Ab | Bb | Eb | Ab | Gm7 | D7/F# | Bdim7 | Cm/G
+    51, 52, 4, 17, 88, 61, 101, 96, 106, 91, 103, 42, // Db | Db/F | Ab | Bb7 | Fmaj7 | Dm7 | G7sus4 | G7#5 | It+6 | Fr+6 | Ger+6 | Cmaj7
+    33 // final tonic
+};
+constexpr int romanticMajor[37] = {
+    23, 25, 26, 28, 42, 43, 9, 13, 76, 90, 33, 95, // C | C/E | C/G | C6 | Cmaj7 | Cmaj9 | Am | Am9 | F | Fmaj9 | Cm | G7
+    61, 63, 90, 78, 95, 100, 98, 26, 3, 49, 73, 13, // Dm7 | Dm9 | Fmaj9 | F/A | G7 | G7b9 | G7/B | C/G | A7b9 | D7b9 | Em7 | Am9
+    86, 7, 18, 71, 57, 21, 24, 77, 106, 91, 103, 29, // Fm6 | Abmaj7 | Bb9 | Ebmaj9 | Dbmaj9 | Bdim7 | C#dim7 | F#dim7 | It+6 | Fr+6 | Ger+6 | C6/9
+    23 // final tonic
+};
+constexpr int romanticMinor[37] = {
+    33, 34, 35, 37, 41, 40, 67, 71, 8, 87, 23, 100, // Cm | Cm/Eb | Cm/G | Cm6 | CmMaj7 | Cm9 | Eb | Ebmaj9 | Abmaj9 | Fm9 | C | G7b9
+    62, 100, 40, 87, 85, 16, 71, 8, 104, 49, 21, 35, // Dm7b5 | G7b9 | Cm9 | Fm9 | Fm/Ab | Bb13 | Ebmaj9 | Abmaj9 | Gm7 | D7b9 | Bdim7 | Cm/G
+    57, 52, 8, 16, 90, 63, 99, 96, 106, 91, 103, 43, // Dbmaj9 | Db/F | Abmaj9 | Bb13 | Fmaj9 | Dm9 | G7alt | G7#5 | It+6 | Fr+6 | Ger+6 | Cmaj9
+    33 // final tonic
+};
+constexpr int gospelMajor[37] = {
+    23, 25, 26, 28, 42, 43, 9, 11, 76, 88, 33, 95, // C | C/E | C/G | C6 | Cmaj7 | Cmaj9 | Am | Am7 | F | Fmaj7 | Cm | G7
+    90, 78, 86, 26, 95, 101, 63, 93, 13, 45, 3, 29, // Fmaj9 | F/A | Fm6 | C/G | G7 | G7sus4 | Dm9 | G13 | Am9 | D13 | A7b9 | C6/9
+    8, 16, 71, 57, 87, 79, 100, 97, 24, 77, 40, 29, // Abmaj9 | Bb13 | Ebmaj9 | Dbmaj9 | Fm9 | F13 | G7b9 | G7#9 | C#dim7 | F#dim7 | Cm9 | C6/9
+    23 // final tonic
+};
+constexpr int gospelMinor[37] = {
+    33, 34, 35, 37, 39, 40, 67, 70, 4, 84, 23, 100, // Cm | Cm/Eb | Cm/G | Cm6 | Cm7 | Cm9 | Eb | Ebmaj7 | Ab | Fm | C | G7b9
+    87, 16, 71, 8, 62, 100, 40, 79, 105, 49, 21, 38, // Fm9 | Bb13 | Ebmaj9 | Abmaj9 | Dm7b5 | G7b9 | Cm9 | F13 | Gm9 | D7b9 | Bdim7 | Cm6/9
+    57, 17, 86, 26, 90, 63, 99, 101, 66, 3, 43, 38, // Dbmaj9 | Bb7 | Fm6 | C/G | Fmaj9 | Dm9 | G7alt | G7sus4 | E7b9 | A7b9 | Cmaj9 | Cm6/9
+    33 // final tonic
+};
+constexpr int modalMajor[37] = {
+    23, 25, 26, 28, 42, 43, 9, 11, 76, 88, 33, 95, // C | C/E | C/G | C6 | Cmaj7 | Cmaj9 | Am | Am7 | F | Fmaj7 | Cm | G7
+    63, 94, 32, 83, 44, 75, 64, 105, 20, 89, 10, 29, // Dm9 | G13sus4 | C9sus4 | F9sus4 | Cmaj9#11 | Em9 | Dmaj9/C | Gm9 | Bbmaj9 | Fmaj7#11 | Am11 | C6/9
+    57, 8, 19, 71, 87, 36, 99, 48, 77, 14, 43, 30, // Dbmaj9 | Abmaj9 | Bbmaj7 | Ebmaj9 | Fm9 | Cm11 | G7alt | D7alt | F#dim7 | B7alt | Cmaj9 | C6/9#11
+    23 // final tonic
+};
+constexpr int modalMinor[37] = {
+    33, 34, 35, 37, 39, 40, 67, 70, 4, 84, 23, 100, // Cm | Cm/Eb | Cm/G | Cm6 | Cm7 | Cm9 | Eb | Ebmaj7 | Ab | Fm | C | G7b9
+    61, 79, 36, 105, 20, 82, 12, 48, 71, 8, 101, 38, // Dm7 | F13 | Cm11 | Gm9 | Bbmaj9 | F9 | Am7b5 | D7alt | Ebmaj9 | Abmaj9 | G7sus4 | Cm6/9
+    57, 5, 16, 71, 90, 63, 99, 100, 77, 14, 43, 38, // Dbmaj9 | Ab13 | Bb13 | Ebmaj9 | Fmaj9 | Dm9 | G7alt | G7b9 | F#dim7 | B7alt | Cmaj9 | Cm6/9
+    33 // final tonic
+};
+constexpr bool containsText(const char* text, const char* needle) noexcept {
+    for(size_t i=0;text[i]!=0;++i) {
+        size_t j=0; while(needle[j]!=0 && text[i+j]!=0 && text[i+j]==needle[j]) ++j;
+        if(needle[j]==0) return true;
+    }
+    return false;
+}
+constexpr Family familyOf(const OriginalBank& bank) noexcept {
+    return containsText(bank.category,"Funk") ? Family::Funk
+         : containsText(bank.category,"Jazz") ? Family::Jazz
+         : containsText(bank.category,"Chorale") ? Family::Chorale
+         : containsText(bank.category,"Romantic") ? Family::Romantic
+         : containsText(bank.category,"Gospel") ? Family::Gospel
+         : containsText(bank.category,"Modal") ? Family::Modal : Family::Tonal;
+}
+constexpr bool isMinor(const OriginalBank& bank) noexcept {
+    const auto* name=bank.chords[0].name;
+    return containsText(bank.name,"Minor") || (name[0]=='C' && name[1]=='m' && (name[2]!='a' || name[3]!='j'));
+}
+constexpr const int* recipeFor(Family family, bool minor) noexcept {
+    switch(family) {
+        case Family::Funk: return minor ? funkMinor : funkMajor;
+        case Family::Jazz: return minor ? jazzMinor : jazzMajor;
+        case Family::Chorale: return minor ? choraleMinor : choraleMajor;
+        case Family::Romantic: return minor ? romanticMinor : romanticMajor;
+        case Family::Gospel: return minor ? gospelMinor : gospelMajor;
+        case Family::Modal: return minor ? modalMinor : modalMajor;
+        default: return minor ? tonalMinor : tonalMajor;
+    }
+}
+constexpr const char* expandedDescription(Family family) noexcept {
+    switch(family) {
+        case Family::Funk: return "Funk/neo-soul core with clear homes, ii-V routes, backdoors, borrowed colours and chromatic approaches.";
+        case Family::Jazz: return "Jazz core at C3-B3, surrounded by rooted major/minor landings, ii-Vs, altered dominants and borrowed bridges.";
+        case Family::Chorale: return "Four-part chorale core with rooted homes, cadential basses, applied dominants and Romantic/jazz borrowed colours.";
+        case Family::Romantic: return "Romantic piano core with broad tonic landings, minor/major cadences, diminished approaches and borrowed colours.";
+        case Family::Gospel: return "Gospel/soul core with plagal landings, rich turnarounds, secondary dominants and minor-IV colours.";
+        case Family::Modal: return "Modal core with clear major/minor resolutions, suspended cadences, related keys and chromatic bridges.";
+        default: return "A broad functional palette with tonic resolutions, predominant routes, secondary dominants and borrowed colours.";
+    }
+}
+constexpr bool sameWrittenVoicing(const Chord& a, const Chord& b) noexcept {
+    if(a.size!=b.size) return false;
+    for(int i=0;i<a.size;++i)
+        if(a.notes[static_cast<size_t>(i)]!=b.notes[static_cast<size_t>(i)]) return false;
+    return true;
+}
+
+constexpr bool voicingAlreadyUsed(const Bank& bank, int slot, const Chord& chord) noexcept {
+    // Reserve every historical core voicing before assigning the surrounding keys.
+    for(int i=24;i<36;++i)
+        if(sameWrittenVoicing(bank.chords[static_cast<size_t>(i)],chord)) return true;
+    for(int i=0;i<slot;++i)
+        if((i<24 || i>=36) && sameWrittenVoicing(bank.chords[static_cast<size_t>(i)],chord)) return true;
+    return false;
+}
+
+constexpr bool sortAlternative(Chord& chord, int bass) noexcept {
+    for(int i=1;i<chord.size;++i) {
+        const int note=chord.notes[static_cast<size_t>(i)];
+        if(note<=bass || note>84) return false;
+        int j=i;
+        while(j>1 && chord.notes[static_cast<size_t>(j-1)]>note) {
+            chord.notes[static_cast<size_t>(j)]=chord.notes[static_cast<size_t>(j-1)];
+            --j;
+        }
+        chord.notes[static_cast<size_t>(j)]=note;
+    }
+    for(int i=1;i<chord.size;++i)
+        if(chord.notes[static_cast<size_t>(i)]==chord.notes[static_cast<size_t>(i-1)]) return false;
+    return true;
+}
+
+constexpr Chord distinctSupplement(const Bank& bank, int slot) noexcept {
+    const auto source=bank.chords[static_cast<size_t>(slot)];
+    if(!voicingAlreadyUsed(bank,slot,source)) return source;
+    // Retain the bass and all pitch classes; try compact upper-voice redistributions
+    // before wider ones. This also keeps slash chords faithful to their written bass.
+    for(int direction=-1;direction<=1;direction+=2) {
+        for(int index=1;index<source.size;++index) {
+            const int voice=direction<0 ? source.size-index : index;
+            auto candidate=source;
+            candidate.notes[static_cast<size_t>(voice)]+=12*direction;
+            if(sortAlternative(candidate,source.notes[0]) && !voicingAlreadyUsed(bank,slot,candidate)) return candidate;
+        }
+    }
+    // A repeated rich voicing may need two voices redistributed rather than sending
+    // its top note into an extreme register. Every moved voice stays within one octave.
+    for(int a=1;a<source.size;++a) {
+        for(int b=a+1;b<source.size;++b) {
+            for(int da=-1;da<=1;da+=2) {
+                for(int db=-1;db<=1;db+=2) {
+                    auto candidate=source;
+                    candidate.notes[static_cast<size_t>(a)]+=12*da;
+                    candidate.notes[static_cast<size_t>(b)]+=12*db;
+                    if(sortAlternative(candidate,source.notes[0]) && !voicingAlreadyUsed(bank,slot,candidate)) return candidate;
+                }
+            }
+        }
+    }
+    return source; // The compile-time uniqueness check below catches exhausted choices.
+}
+
+constexpr Bank makeExpandedBank(int b) noexcept {
+        Bank target {};
+        const auto& source=originalLibrary[b];
+        const auto family=familyOf(source);
+        const bool minor=isMinor(source);
+        const auto* recipe=recipeFor(family,minor);
+        target.name=source.name; target.category=source.category; target.description=expandedDescription(family);
+        for(int slot=0;slot<bankSize;++slot) {
+            if(slot>=24 && slot<36) target.chords[static_cast<size_t>(slot)]=source.chords[static_cast<size_t>(slot-24)];
+            else {
+                const int supplement=slot<24 ? slot : slot-12;
+                auto chord=supplements[recipe[supplement]];
+                // Romantic bass spacing is broad; chorale and jazz pads stay compact.
+                if(family==Family::Romantic && chord.notes[0]>=48) chord.notes[0]-=12;
+                target.chords[static_cast<size_t>(slot)]=chord;
+            }
+        }
+        // A dependable final home is always available, with a distinct upper voicing.
+        const bool picardy=containsText(source.name,"Picardy");
+        target.chords[48]=minor && !picardy
+            ? Chord{"Cm",{{48,60,63,67,0,0}},4}
+            : Chord{"C",{{48,60,64,67,0,0}},4};
+        for(int slot=0;slot<bankSize;++slot)
+            if(slot<24 || slot>=36) target.chords[static_cast<size_t>(slot)]=distinctSupplement(target,slot);
+        return target;
+}
+
+constexpr bool hasDistinctVoicings(const Bank& bank) noexcept {
+    for(int a=0;a<bankSize;++a)
+        for(int b=a+1;b<bankSize;++b)
+            if(sameWrittenVoicing(bank.chords[static_cast<size_t>(a)],bank.chords[static_cast<size_t>(b)])) return false;
+    return true;
+}
+
+// Evaluate one bank at a time to stay below Apple Clang's default constexpr step
+// budget. The resulting table is fixed data, with no construction on the audio thread.
+template<size_t Index> struct ExpandedBank {
+    static constexpr Bank value=makeExpandedBank(static_cast<int>(Index));
+    static_assert(hasDistinctVoicings(value),"Each chord key needs a distinct written voicing");
+};
+template<size_t... Index>
+constexpr auto makeExpandedLibrary(std::index_sequence<Index...>) noexcept {
+    return std::array<Bank,librarySize>{{ExpandedBank<Index>::value...}};
+}
+constexpr auto library=makeExpandedLibrary(std::make_index_sequence<librarySize>{});
 constexpr const char* voicingNames[voicingCount] = {"Written", "Close", "Open", "Drop 2", "Rotate 1", "Rotate 2"};
 
 void sort(Notes& chord) noexcept { std::sort(chord.notes.begin(), chord.notes.begin()+chord.size); }
@@ -765,13 +1115,19 @@ std::string transposeToken(const std::string& name, size_t start, int key) {
     int pitch=noteClass(name[start]); if(pitch<0) return name;
     size_t end=start+1;
     if(end<name.size() && (name[end]=='#' || name[end]=='b')) { pitch+=name[end]=='#' ? 1 : -1; ++end; }
+    if(start==0 && end<name.size()) {
+        const char next=name[end];
+        const bool rootSuffix=(next>='0' && next<='9') || next=='/' || next=='(' || next=='+' || next=='-'
+            || next=='m' || next=='M' || next=='d' || next=='a' || next=='s';
+        if(!rootSuffix) return name;
+    }
     constexpr const char* flatNames[12]={"C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"};
     return name.substr(0,start)+flatNames[(pitch+key+12)%12]+name.substr(end);
 }
 } // namespace
 
 const std::vector<Bank>& banks() {
-    static const std::vector<Bank> result(std::begin(library),std::end(library));
+    static const std::vector<Bank> result(library.begin(),library.end());
     return result;
 }
 
@@ -789,9 +1145,8 @@ std::string chordName(int bank, int slot, int key) {
     return name;
 }
 
-Notes resolve(int bank, int slot, int key, int voicing, int octaveShift) {
-    if(bank<0 || bank>=librarySize || slot<0 || slot>=bankSize) return {};
-    const auto& source=library[bank].chords[static_cast<size_t>(slot)];
+namespace {
+Notes resolveChord(const Chord& source, int key, int voicing, int octaveShift) {
     voicing=std::clamp(voicing,0,voicingCount-1);
     Notes result; result.size=source.size;
     if(voicing==0) result.notes=source.notes;
@@ -835,5 +1190,22 @@ Notes resolve(int bank, int slot, int key, int voicing, int octaveShift) {
     if(low+shift<0 || high+shift>127) return {};
     for(int i=0;i<result.size;++i) result.notes[static_cast<size_t>(i)]=static_cast<int>(result.notes[static_cast<size_t>(i)]+shift);
     return result;
+}
+} // namespace
+
+Notes resolve(int bank, int slot, int key, int voicing, int octaveShift) {
+    if(bank<0 || bank>=librarySize || slot<0 || slot>=bankSize) return {};
+    return resolveChord(library[static_cast<size_t>(bank)].chords[static_cast<size_t>(slot)],key,voicing,octaveShift);
+}
+
+Notes resolveLegacy(int bank, int slot, int key, int voicing, int octaveShift) {
+    if(bank<0 || bank>=librarySize || slot<0 || slot>=legacyBankSize) return {};
+    return resolveChord(originalLibrary[bank].chords[static_cast<size_t>(slot)],key,voicing,octaveShift);
+}
+
+std::string legacyChordName(int bank, int slot, int key) {
+    if(bank<0 || bank>=librarySize || slot<0 || slot>=legacyBankSize) return {};
+    // The original v0.3 palette occupies the unchanged central octave in v0.4.
+    return chordName(bank,slot+24,key);
 }
 } // namespace SixthChords

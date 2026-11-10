@@ -142,7 +142,7 @@ void SixthEditor::chooseProgram(int index)
     repaint();
 }
 
-SixthEditor::SixthEditor(SixthProcessor& p) : AudioProcessorEditor(p),processor(p),keyboard(p.keyboard,juce::MidiKeyboardComponent::horizontalKeyboard)
+SixthEditor::SixthEditor(SixthProcessor& p) : AudioProcessorEditor(p),processor(p),keyboard(p)
 {
     setLookAndFeel(&look); addAndMakeVisible(panel); panel.setBounds(0,0,designWidth,designHeight);
     for(auto* component:std::initializer_list<juce::Component*>{&presets,&previous,&next,&initialise,&presetLabel,&filterDisplayLabel,&lfoShape,&retrigger,&keyboard}) panel.addAndMakeVisible(component);
@@ -203,14 +203,17 @@ SixthEditor::SixthEditor(SixthProcessor& p) : AudioProcessorEditor(p),processor(
     buildChordControls();
 
     keyboard.setOctaveForMiddleC(4);
-    keyboard.setAvailableRange(36,96); keyboard.setKeyWidth(32.0f); keyboard.setLowestVisibleKey(48);
+    keyboard.setAvailableRange(0,127); keyboard.setKeyWidth(38.0f); keyboard.setLowestVisibleKey(24);
+    keyboard.setScrollButtonsVisible(true); keyboard.setComponentID("performanceKeyboard");
     keyboard.setColour(juce::MidiKeyboardComponent::whiteNoteColourId,cream);
     keyboard.setColour(juce::MidiKeyboardComponent::blackNoteColourId,juce::Colour(0xff13181c));
     keyboard.setColour(juce::MidiKeyboardComponent::keyDownOverlayColourId,red.withAlpha(0.65f));
     keyboard.setColour(juce::MidiKeyboardComponent::mouseOverKeyOverlayColourId,mint.withAlpha(0.35f));
     keyboard.setBounds(24,696,1152,80);
     setResizable(true,true); setResizeLimits(900,600,1800,1200); getConstrainer()->setFixedAspectRatio(1.5);
-    setSize(designWidth,designHeight); showChordView(read("chordMode")>=0.5f); startTimerHz(24); timerCallback();
+    setSize(designWidth,designHeight); showChordView(read("chordMode")>=0.5f);
+    seenChordGeneration=processor.chordGeneration.load(std::memory_order_acquire); updateKeyboardViewport(true);
+    startTimerHz(24); timerCallback();
 }
 SixthEditor::~SixthEditor() { stopTimer(); releaseChordPads(); setLookAndFeel(nullptr); }
 void SixthEditor::paint(juce::Graphics& g) { g.fillAll(background); }
@@ -224,7 +227,13 @@ void SixthEditor::timerCallback()
     meter=juce::jmax(processor.outputLevel.load(),meter*0.86f);
     presetLabel.setText(processor.isCurrentProgramModified() ? "SOUND PATCH  /  EDITED" : "SOUND PATCH",juce::dontSendNotification);
     midiActive=false;
-    for(int note=0;note<=127;++note) midiActive=midiActive || processor.keyboard.isNoteOnForChannels(0xffff,note);
+    bool newRawNote=false;
+    for(int note=0;note<=127;++note) {
+        const bool down=processor.keyboard.isNoteOnForChannels(0xffff,note);
+        midiActive=midiActive || down;
+        newRawNote=newRawNote || (down && !previousRawNotes[static_cast<size_t>(note)]);
+        previousRawNotes[static_cast<size_t>(note)]=down;
+    }
     for(int i=0;i<3;++i) {
         octaveButtons[static_cast<size_t>(i)].setToggleState(juce::roundToInt(read("octave"))==i,juce::dontSendNotification);
         chorusButtons[static_cast<size_t>(i)].setToggleState(juce::roundToInt(read("chorus"))==i,juce::dontSendNotification);
@@ -234,7 +243,29 @@ void SixthEditor::timerCallback()
     chordEnable.setButtonText(enabled ? "CHORD MODE ON" : "CHORD MODE OFF");
     chordView.setButtonText(enabled ? "CHORDS ON" : "CHORDS");
     if(lastDisplayedBank!=currentChordBank()) rebuildChordBanks(true);
-    for(auto& pad:chordPads) if(pad) pad->repaint();
+    if(displayedChordLayout!=currentChordLayout()) refreshChordPads();
+    const auto generation=processor.chordGeneration.load(std::memory_order_acquire);
+    const auto display=processor.getChordDisplay();
+    const double now=juce::Time::getMillisecondCounterHiRes();
+    const bool newChord=generation!=seenChordGeneration;
+    if(display.slot<0) {
+        chordPopupUntil=0; chordPopup.setVisible(false);
+    } else if(newChord) {
+        popupDisplay=display; chordPopupUntil=now+2200.0;
+        chordPopup.setAlpha(1.0f); chordPopup.setVisible(true); chordPopup.toFront(false);
+        bool anyPadHeld=false; for(const auto& pad:chordPads) anyPadHeld=anyPadHeld || (pad && pad->held);
+        if(followChordInput.getToggleState() && !anyPadHeld && display.layout==0
+            && display.trigger>=SixthChords::firstTrigger && display.trigger<=SixthChords::lastTrigger)
+            selectChordPage(juce::jmin(3,(display.trigger-SixthChords::firstTrigger)/12));
+    }
+    seenChordGeneration=generation;
+    if(chordPopup.isVisible()) {
+        if(now>=chordPopupUntil) chordPopup.setVisible(false);
+        else { chordPopup.setAlpha(static_cast<float>(juce::jlimit(0.0,1.0,(chordPopupUntil-now)/300.0))); chordPopup.repaint(); }
+    }
+    updateKeyboardViewport(newRawNote || newChord);
+    keyboard.repaint();
+    for(auto& pad:chordPads) if(pad && pad->isVisible()) pad->repaint();
     panel.repaint();
 }
 void SixthEditor::paintFilter(juce::Graphics& g,juce::Rectangle<float> r)
@@ -305,7 +336,7 @@ void SixthEditor::paintPanel(juce::Graphics& g)
     }
     }
     g.setColour(border); g.drawHorizontalLine(666,24,1176);
-    text(g,chordPageVisible ? "12 KEYS = 12 CHORDS   /   NEXT OCTAVE = NEXT REGISTER   /   HOLD A PAD OR PLAY MIDI" : "DOUBLE CLICK: RESET   /   SHIFT + DRAG: FINE ADJUST   /   HOVER: HELP",{26,671,950,16},9,muted);
+    text(g,chordPageVisible ? (currentChordLayout()==1 ? "LEGACY 12-CHORD MAP   /   CHOOSE FULL C1-C5 FOR 49 DIFFERENT CHORDS" : "49 DIFFERENT CHORDS ON C1-C5   /   KEYS OUTSIDE PLAY SINGLE NOTES   /   HOLD A PAD OR PLAY MIDI") : "DOUBLE CLICK: RESET   /   SHIFT + DRAG: FINE ADJUST   /   HOVER: HELP",{26,671,950,16},9,muted);
     g.setColour(midiActive ? red : border); g.fillEllipse(1000,675,6,6);
     text(g,"MIDI",{1011,670,39,17},9,muted);
     for(int i=0;i<18;++i) {
@@ -313,20 +344,47 @@ void SixthEditor::paintPanel(juce::Graphics& g)
         g.setColour(meter>=threshold ? (i>15 ? red : mint) : border.darker(0.35f));
         g.fillRect(1058+i*6,673,4,10);
     }
-    text(g,"MIDI KEYBOARD",{26,780,300,16},8,muted);
-    text(g,read("chordMode")>=0.5f ? "CHORD MODE ON  /  MIDI 48-59 = THE DISPLAYED PALETTE" : "SIX VOICES  /  EXPANDED SOUND DESIGN",{690,780,483,16},8,muted,juce::Justification::centredRight);
+    text(g,"MIDI KEYBOARD / C4 = MIDI 60",{26,780,230,16},8,muted);
+    g.setColour(amber); g.fillRect(270,785,8,5); text(g,"INPUT / TRIGGER",{285,780,125,16},8,muted);
+    g.setColour(mint); g.fillRect(430,785,8,5); text(g,"SOUNDING NOTES",{445,780,135,16},8,muted);
+    g.setColour(amber); g.fillRect(595,785,4,5); g.setColour(mint); g.fillRect(599,785,4,5); text(g,"BOTH",{610,780,50,16},8,muted);
+    text(g,read("chordMode")>=0.5f ? (currentChordLayout()==1 ? "LEGACY 12 / CHORD MODE ON" : "49 CHORDS / C1-C5 / CHORD MODE ON") : "SIX VOICES / EXPANDED SOUND DESIGN",{700,780,473,16},8,muted,juce::Justification::centredRight);
 }
 
+void SixthEditor::PerformanceKeyboard::drawWhiteNote(int note,juce::Graphics& g,juce::Rectangle<float> area,bool input,bool over,juce::Colour line,juce::Colour label)
+{
+    const bool sounding=processor.isSoundingNote(note);
+    g.setColour(input ? amber : (sounding ? mint : cream)); g.fillRect(area);
+    if(input && sounding) { g.setColour(mint); g.fillRect(area.withTrimmedTop(area.getHeight()*0.5f)); }
+    if(over) { g.setColour(juce::Colours::white.withAlpha(0.12f)); g.fillRect(area); }
+    g.setColour(line); g.drawRect(area,0.7f);
+    if(note%12==0 || input || sounding) {
+        g.setColour((input || sounding) ? background : label); g.setFont(juce::FontOptions(10.0f));
+        g.drawFittedText(SixthEditor::inputNoteName(note),area.removeFromBottom(15).toNearestInt(),juce::Justification::centred,1);
+    }
+}
+void SixthEditor::PerformanceKeyboard::drawBlackNote(int note,juce::Graphics& g,juce::Rectangle<float> area,bool input,bool over,juce::Colour fill)
+{
+    const bool sounding=processor.isSoundingNote(note);
+    g.setColour(input ? amber : (sounding ? mint : fill)); g.fillRect(area);
+    if(input && sounding) { g.setColour(mint); g.fillRect(area.withTrimmedTop(area.getHeight()*0.5f)); }
+    if(over) { g.setColour(juce::Colours::white.withAlpha(0.12f)); g.fillRect(area); }
+    g.setColour((input || sounding) ? background.withAlpha(0.35f) : border); g.drawRect(area,0.7f);
+    if(input || sounding) {
+        g.setColour(background); g.setFont(juce::FontOptions(9.0f));
+        g.drawFittedText(SixthEditor::inputNoteName(note),area.removeFromBottom(15).reduced(1,0).toNearestInt(),juce::Justification::centred,1);
+    }
+}
 void SixthEditor::ChordPad::paint(juce::Graphics& g) { owner.paintChordPad(g,slot,getLocalBounds(),held); }
 void SixthEditor::ChordPad::mouseDown(const juce::MouseEvent& event)
 {
     if(!event.mods.isLeftButtonDown() || held) return;
-    held=true; owner.playChordPad(slot,true); repaint();
+    held=true; heldTrigger=owner.triggerForSlot(slot); owner.playChordTrigger(heldTrigger,true); repaint();
 }
 void SixthEditor::ChordPad::release()
 {
     if(!held) return;
-    held=false; owner.playChordPad(slot,false); repaint();
+    held=false; owner.playChordTrigger(heldTrigger,false); heldTrigger=-1; repaint();
 }
 juce::String SixthEditor::inputNoteName(int note)
 {
@@ -336,21 +394,25 @@ int SixthEditor::currentChordBank() const
 {
     return juce::jlimit(0,static_cast<int>(SixthChords::banks().size())-1,juce::roundToInt(read("chordBank")));
 }
+int SixthEditor::currentChordLayout() const { return juce::roundToInt(read("chordLayout")); }
+int SixthEditor::triggerForSlot(int slot) const { return currentChordLayout()==1 ? 48+slot : SixthChords::firstTrigger+slot; }
+bool SixthEditor::chordSlotActive(int slot) const
+{
+    return slot>=0 && slot<64 && (processor.activeChordSlots.load(std::memory_order_relaxed)&(std::uint64_t{1}<<slot))!=0;
+}
 juce::String SixthEditor::chordNotes(const SixthChords::Notes& notes) const
 {
     juce::String result;
-    for(int i=0;i<notes.size;++i) {
-        if(i>0) result+="  ";
-        result+=inputNoteName(notes.notes[static_cast<size_t>(i)]);
-    }
+    for(int i=0;i<notes.size;++i) { if(i>0) result+="  "; result+=inputNoteName(notes.notes[static_cast<size_t>(i)]); }
     return result;
 }
-void SixthEditor::playChordPad(int slot,bool down)
+void SixthEditor::playChordTrigger(int trigger,bool down)
 {
+    if(trigger<0 || trigger>127) return;
     if(down) {
         if(read("chordMode")<0.5f) chooseParameter("chordMode",1);
-        processor.keyboard.noteOn(1,48+slot,0.8f);
-    } else processor.keyboard.noteOff(1,48+slot,0.0f);
+        processor.keyboard.noteOn(1,trigger,0.8f);
+    } else processor.keyboard.noteOff(1,trigger,0.0f);
 }
 void SixthEditor::releaseChordPads() { for(auto& pad:chordPads) if(pad) pad->release(); }
 void SixthEditor::showChordView(bool show)
@@ -359,8 +421,37 @@ void SixthEditor::showChordView(bool show)
     chordPageVisible=show;
     for(auto* component:synthComponents) component->setVisible(!show);
     for(auto* component:chordComponents) component->setVisible(show);
+    refreshChordPads();
     synthView.setToggleState(!show,juce::dontSendNotification); chordView.setToggleState(show,juce::dontSendNotification);
     panel.repaint();
+}
+void SixthEditor::selectChordPage(int page)
+{
+    if(currentChordLayout()==1) return;
+    page=juce::jlimit(0,3,page);
+    if(chordOctavePage==page && displayedChordLayout==0) return;
+    releaseChordPads(); chordOctavePage=page; refreshChordPads(); panel.repaint();
+}
+void SixthEditor::refreshChordPads()
+{
+    releaseChordPads();
+    const bool legacy=currentChordLayout()==1;
+    displayedChordLayout=legacy ? 1 : 0;
+    const int first=legacy ? 0 : chordOctavePage*12;
+    const int count=!legacy && chordOctavePage==3 ? 13 : 12;
+    chordPage.setEnabled(!legacy); followChordInput.setEnabled(!legacy);
+    chordPage.setSelectedId(legacy ? 3 : chordOctavePage+1,juce::dontSendNotification);
+    for(int i=0;i<13;++i) {
+        auto& pad=chordPads[static_cast<size_t>(i)]; if(!pad) continue;
+        const int slot=first+i;
+        if(i<count) {
+            pad->setSlot(slot); const int trigger=legacy ? 48+slot : SixthChords::firstTrigger+slot;
+            pad->setName("Chord pad "+inputNoteName(trigger)); pad->setComponentID("chordPad"+juce::String(trigger));
+            if(count==13) pad->setBounds(25+(i%7)*166,300+(i/7)*142,152,130);
+            else pad->setBounds(25+(i%6)*194,300+(i/6)*142,180,130);
+        }
+        pad->setVisible(chordPageVisible && i<count);
+    }
 }
 void SixthEditor::buildChordControls()
 {
@@ -368,13 +459,13 @@ void SixthEditor::buildChordControls()
     for(auto* component:std::initializer_list<juce::Component*>{&lfoShape,&retrigger,&filterDisplayLabel}) synthComponents.push_back(component);
     for(auto& button:octaveButtons) synthComponents.push_back(&button);
     for(auto& button:chorusButtons) synthComponents.push_back(&button);
-
     panel.addAndMakeVisible(synthView); panel.addAndMakeVisible(chordView);
     synthView.setBounds(320,32,106,30); chordView.setBounds(438,32,106,30);
+    synthView.setComponentID("synthView"); chordView.setComponentID("chordView");
     synthView.onClick=[this] { showChordView(false); }; chordView.onClick=[this] { showChordView(true); };
     synthView.setTooltip("Synthesizer sound controls. Chord mode can stay enabled while editing the sound.");
-    chordView.setTooltip("Related chord palettes mapped to your keyboard.");
-    for(auto* component:std::initializer_list<juce::Component*>{&chordCategory,&chordBanks,&chordKey,&chordVoicing,&chordRegister,&chordEnable,&panic}) {
+    chordView.setTooltip("Different chords across the four-octave C1-C5 keyboard map.");
+    for(auto* component:std::initializer_list<juce::Component*>{&chordCategory,&chordBanks,&chordKey,&chordVoicing,&chordRegister,&chordEnable,&panic,&chordLayout,&chordPage,&followChordInput}) {
         panel.addAndMakeVisible(component); chordComponents.push_back(component);
     }
     chordCategories.add("All styles");
@@ -383,30 +474,39 @@ void SixthEditor::buildChordControls()
     chordCategory.setBounds(36,176,190,30); chordCategory.setTooltip("Browse a family of harmony banks. Filtering doesn't change the playing bank.");
     chordCategory.onChange=[this] { rebuildChordBanks(false); };
     chordBanks.setBounds(244,176,400,30); chordBanks.setTextWhenNothingSelected("Choose a bank in this family");
-    chordBanks.setTooltip("Each bank contains twelve related chords. This is independent from the synthesizer sound patch.");
+    chordBanks.setTooltip("Each full bank maps 49 different chords to C1-C5. The sound patch is separate.");
     chordBanks.onChange=[this] { if(chordBanks.getSelectedId()>0) chooseParameter("chordBank",chordBanks.getSelectedId()-1); };
     chordKey.addItemList({"C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"},1);
     chordKey.setBounds(662,176,115,30); chordKey.setTooltip("Transpose the whole harmony bank to another key.");
     chordKeyAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.parameters,"chordKey",chordKey);
     for(int i=0;i<SixthChords::voicingCount;++i) chordVoicing.addItem(SixthChords::voicingName(i),i+1);
-    chordVoicing.setBounds(795,176,190,30); chordVoicing.setTooltip("Keep the written voicing, or rearrange its notes. Rootless chords stay rootless.");
+    chordVoicing.setBounds(795,176,190,30); chordVoicing.setTooltip("Keep or rearrange the voiced notes. Rootless chords stay rootless.");
     chordVoicingAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.parameters,"chordVoicing",chordVoicing);
     chordRegister.addItemList({"-2 oct","-1 oct","Written","+1 oct","+2 oct"},1);
-    chordRegister.setBounds(1003,176,96,30); chordRegister.setTooltip("Shift all generated chords by octaves. Your input keyboard's octaves also shift the voicing.");
+    chordRegister.setBounds(1003,176,96,30); chordRegister.setTooltip("Transpose the generated harmony by octaves. In Full C1-C5 mode each trigger has its own chord.");
     chordRegisterAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.parameters,"chordRegister",chordRegister);
-    chordEnable.setBounds(1016,126,146,28); chordEnable.setClickingTogglesState(true);
-    chordEnable.setTooltip("When enabled, every MIDI note triggers its chord slot. Off plays individual notes normally.");
+    chordEnable.setBounds(1016,126,146,28); chordEnable.setClickingTogglesState(true); chordEnable.setComponentID("chordMode");
+    chordEnable.setTooltip("Full mode: C1-C5 triggers chords; outside notes play as single melody notes. Off plays single notes everywhere.");
     chordEnableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.parameters,"chordMode",chordEnable);
-    panic.setBounds(1110,176,52,30); panic.setTooltip("Stop all sounding notes, including sustained chords.");
+    panic.setBounds(1110,176,52,30); panic.setTooltip("Stop all notes, including sustained chords."); panic.setComponentID("chordPanic");
     panic.onClick=[this] { releaseChordPads(); processor.requestPanic(); };
-    for(int slot=0;slot<12;++slot) {
-        auto& pad=chordPads[static_cast<size_t>(slot)]; pad=std::make_unique<ChordPad>(*this,slot);
-        pad->setName("Chord pad "+inputNoteName(48+slot));
-        pad->setTooltip("Hold to audition this chord. Pressing a pad enables chord mode; a sustain pedal can hold released notes.");
-        pad->setBounds(25+(slot%6)*194,296+(slot/6)*146,180,132);
+    chordPage.addItemList({"C1-B1","C2-B2","C3-B3","C4-C5"},1); chordPage.setSelectedId(1,juce::dontSendNotification);
+    chordPage.setBounds(450,264,180,25); chordPage.setName("Chord octave page"); chordPage.setComponentID("chordPage");
+    chordPage.setTooltip("Browse the four keyboard regions. The final page includes C5, for 49 different trigger keys.");
+    chordPage.onChange=[this] { selectChordPage(chordPage.getSelectedId()-1); };
+    followChordInput.setBounds(642,264,124,25); followChordInput.setClickingTogglesState(true); followChordInput.setToggleState(true,juce::dontSendNotification);
+    followChordInput.setTooltip("Follow new MIDI chord triggers to their octave page. Does not interrupt a held mouse pad.");
+    chordLayout.addItemList({"Full C1-C5 (49 chords)","Legacy 12 (repeating)"},1);
+    chordLayout.setBounds(940,264,222,25); chordLayout.setComponentID("chordLayout");
+    chordLayout.setTooltip("Full maps 49 different chords. Legacy keeps saved v0.3 twelve-chord keyboard patterns.");
+    chordLayoutAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.parameters,"chordLayout",chordLayout);
+    for(int i=0;i<13;++i) {
+        auto& pad=chordPads[static_cast<size_t>(i)]; pad=std::make_unique<ChordPad>(*this,i);
+        pad->setTooltip("Hold to audition. A sustain pedal can hold released notes. A pad enables chord mode.");
         panel.addAndMakeVisible(*pad); chordComponents.push_back(pad.get());
     }
-    rebuildChordBanks(false);
+    chordPopup.setComponentID("chordPopup"); chordPopup.setBounds(20,651,1160,43); panel.addChildComponent(chordPopup);
+    rebuildChordBanks(false); refreshChordPads();
 }
 void SixthEditor::rebuildChordBanks(bool followCurrent)
 {
@@ -428,52 +528,84 @@ void SixthEditor::rebuildChordBanks(bool followCurrent)
 }
 void SixthEditor::paintChordPad(juce::Graphics& g,int slot,juce::Rectangle<int> bounds,bool down)
 {
-    const bool active=down || (processor.activeChordSlots.load()&(1<<slot))!=0;
-    const bool enabled=read("chordMode")>=0.5f;
+    const bool active=down || chordSlotActive(slot),enabled=read("chordMode")>=0.5f;
     auto area=bounds.toFloat().reduced(1.0f);
     g.setColour(juce::Colours::black.withAlpha(0.2f)); g.fillRoundedRectangle(area.translated(0,2),9);
     g.setColour(active ? mint.darker(0.78f) : panelColour); g.fillRoundedRectangle(area,9);
     g.setColour(active ? mint : border); g.drawRoundedRectangle(area.reduced(0.5f),9,active ? 1.5f : 1.0f);
     const int bank=currentChordBank(),key=juce::roundToInt(read("chordKey")),voice=juce::roundToInt(read("chordVoicing"));
     const int registerShift=juce::roundToInt(read("chordRegister"))-2;
-    const auto notes=SixthChords::resolve(bank,slot,key,voice,registerShift);
-    const juce::String name(SixthChords::chordName(bank,slot,key));
+    const bool legacy=currentChordLayout()==1;
+    const auto notes=legacy ? SixthChords::resolveLegacy(bank,slot,key,voice,registerShift) : SixthChords::resolve(bank,slot,key,voice,registerShift);
+    const juce::String name(legacy ? SixthChords::legacyChordName(bank,slot,key) : SixthChords::chordName(bank,slot,key));
     text(g,juce::String(slot+1).paddedLeft('0',2),{14,10,40,20},10,active ? mint : muted,juce::Justification::centredLeft,true);
-    text(g,inputNoteName(48+slot),{90,10,76,20},12,cream,juce::Justification::centredRight,true);
-    g.setColour(cream.withAlpha(enabled || active ? 1.0f : 0.6f)); g.setFont(juce::FontOptions(19.0f,juce::Font::bold));
-    g.drawFittedText(name,{14,35,152,47},juce::Justification::centredLeft,2,0.7f);
-    text(g,chordNotes(notes),{14,86,152,21},10,active ? cream : muted);
-    g.setColour(active ? mint : border); g.fillRoundedRectangle(14.0f,115.0f,152.0f,2.0f,1.0f);
+    text(g,inputNoteName(triggerForSlot(slot)),{bounds.getWidth()-90,10,76,20},12,cream,juce::Justification::centredRight,true);
+    g.setColour(cream.withAlpha(enabled || active ? 1.0f : 0.6f)); g.setFont(juce::FontOptions(bounds.getWidth()<170 ? 17.0f : 19.0f,juce::Font::bold));
+    g.drawFittedText(name,{14,35,bounds.getWidth()-28,44},juce::Justification::centredLeft,2,0.7f);
+    g.setColour(active ? cream : muted); g.setFont(juce::FontOptions(10.0f));
+    g.drawFittedText(chordNotes(notes),{14,84,bounds.getWidth()-28,25},juce::Justification::centredLeft,2,0.85f);
+    g.setColour(active ? mint : border); g.fillRoundedRectangle(14.0f,115.0f,static_cast<float>(bounds.getWidth()-28),2.0f,1.0f);
 }
 void SixthEditor::paintChordPage(juce::Graphics& g)
 {
+    const bool legacy=currentChordLayout()==1;
     text(g,"PLAY HARMONY",{23,93,500,16},9,muted);
-    text(g,juce::String(SixthChords::banks().size())+" BANKS  /  "+juce::String(SixthChords::banks().size()*12)+" CHORD SLOTS  /  6 VOICINGS",{640,93,535,16},9,muted,juce::Justification::centredRight);
-    section(g,{20,114,1160,142},"CHORD PERFORMANCE","ONE KEY / A RELATED CHORD PALETTE");
-    text(g,"STYLE",{36,157,190,16},9,muted);
-    text(g,"HARMONY BANK",{244,157,400,16},9,muted);
-    text(g,"KEY",{662,157,115,16},9,muted);
-    text(g,"VOICING",{795,157,190,16},9,muted);
-    text(g,"REGISTER",{1003,157,96,16},9,muted);
+    text(g,juce::String(SixthChords::banks().size())+" BANKS / "+juce::String(SixthChords::banks().size()*(legacy ? 12 : SixthChords::bankSize))+" CHORD SLOTS / 6 VOICINGS",{640,93,535,16},9,muted,juce::Justification::centredRight);
+    section(g,{20,114,1160,142},"CHORD PERFORMANCE",legacy ? "LEGACY 12 — CHOOSE FULL C1-C5 FOR THE EXPANDED PALETTE" : "49 DIFFERENT CHORDS / FOUR OCTAVES / NO OCTAVE REPEATS");
+    text(g,"STYLE",{36,157,190,16},9,muted); text(g,"HARMONY BANK",{244,157,400,16},9,muted);
+    text(g,"KEY",{662,157,115,16},9,muted); text(g,"VOICING",{795,157,190,16},9,muted); text(g,"REGISTER",{1003,157,96,16},9,muted);
     const auto& bank=SixthChords::banks()[static_cast<size_t>(currentChordBank())];
     g.setColour(muted); g.setFont(juce::FontOptions(11.0f));
     g.drawFittedText(juce::String(bank.name)+" - "+bank.description,{36,215,1125,31},juce::Justification::centredLeft,2);
-    text(g,"NEXT KEY MAP  /  C3-B3 (MIDI 48-59)",{25,269,700,18},10,cream,juce::Justification::centredLeft,true);
-    text(g,"Hold a pad to audition / Higher/lower octaves move the voicing",{585,269,590,18},10,muted,juce::Justification::centredRight);
-
+    const int first=legacy ? 48 : SixthChords::firstTrigger+chordOctavePage*12;
+    const int last=legacy ? 59 : juce::jmin(SixthChords::lastTrigger,first+(chordOctavePage==3 ? 12 : 11));
+    text(g,"KEY MAP / "+inputNoteName(first)+"–"+inputNoteName(last)+" / MIDI "+juce::String(first)+"–"+juce::String(last),{25,266,410,20},10,cream,juce::Justification::centredLeft,true);
+    text(g,"MAP",{893,267,41,18},9,muted,juce::Justification::centredRight);
     const auto display=processor.getChordDisplay();
     auto readout=juce::Rectangle<float>(20,592,1160,57);
     g.setColour(panelColour); g.fillRoundedRectangle(readout,9); g.setColour(border); g.drawRoundedRectangle(readout.reduced(0.5f),9,1);
     if(display.slot>=0 && display.trigger>=0 && display.bank>=0 && display.bank<static_cast<int>(SixthChords::banks().size())) {
         text(g,"LAST PLAYED",{36,600,330,13},9,muted);
-        const auto name=juce::String(SixthChords::chordName(display.bank,display.slot,display.key));
+        const auto name=juce::String(display.layout==1 ? SixthChords::legacyChordName(display.bank,display.slot,display.key) : SixthChords::chordName(display.bank,display.slot,display.key));
         text(g,name,{36,615,340,26},19,cream,juce::Justification::centredLeft,true);
         text(g,chordNotes(display.notes),{410,610,470,28},14,mint);
-        text(g,"INPUT "+inputNoteName(display.trigger)+" / MIDI "+juce::String(display.trigger),{882,605,278,18},11,cream,juce::Justification::centredRight);
+        text(g,"INPUT "+inputNoteName(display.trigger)+" / MIDI "+juce::String(display.trigger),{882,605,278,18},11,amber,juce::Justification::centredRight);
         const auto& playedBank=SixthChords::banks()[static_cast<size_t>(display.bank)];
         text(g,playedBank.name,{820,625,340,15},9,muted,juce::Justification::centredRight);
     } else {
         text(g,"Choose a bank, then play one key.",{37,601,670,35},19,cream,juce::Justification::centredLeft,true);
-        text(g,"Individual keys become complete voicings.",{742,609,418,24},12,muted,juce::Justification::centredRight);
+        text(g,legacy ? "Legacy maps repeat in other octaves." : "C1-C5: different chords. Outside: single melody notes.",{700,609,460,24},11,muted,juce::Justification::centredRight);
     }
+}
+void SixthEditor::paintChordPopup(juce::Graphics& g,juce::Rectangle<int> bounds)
+{
+    auto area=bounds.toFloat().reduced(0.5f);
+    g.setColour(juce::Colour(0xff173d3e)); g.fillRoundedRectangle(area,7);
+    g.setColour(mint.withAlpha(0.85f)); g.drawRoundedRectangle(area,7,1.2f);
+    const auto name=juce::String(popupDisplay.layout==1 ? SixthChords::legacyChordName(popupDisplay.bank,popupDisplay.slot,popupDisplay.key) : SixthChords::chordName(popupDisplay.bank,popupDisplay.slot,popupDisplay.key));
+    text(g,"PLAYED CHORD",{14,2,330,11},8,mint);
+    text(g,name,{14,13,330,28},21,cream,juce::Justification::centredLeft,true);
+    text(g,"INPUT "+inputNoteName(popupDisplay.trigger)+" / MIDI "+juce::String(popupDisplay.trigger),{358,8,245,30},14,amber,juce::Justification::centredLeft,true);
+    text(g,"SOUNDING  "+chordNotes(popupDisplay.notes),{620,8,520,30},14,mint);
+}
+void SixthEditor::updateKeyboardViewport(bool force)
+{
+    // Do not move notes under a held mouse/finger; fit the range after release.
+    if(keyboard.isMouseButtonDown()) { keyboardViewportPending=true; return; }
+    force=force || keyboardViewportPending; keyboardViewportPending=false;
+    int low=SixthChords::firstTrigger,high=SixthChords::lastTrigger;
+    for(int note=0;note<=127;++note) {
+        if(processor.keyboard.isNoteOnForChannels(0xffff,note) || processor.isSoundingNote(note)) { low=juce::jmin(low,note); high=juce::jmax(high,note); }
+    }
+    if(chordPopup.isVisible()) {
+        low=juce::jmin(low,popupDisplay.trigger); high=juce::jmax(high,popupDisplay.trigger);
+        for(int i=0;i<popupDisplay.notes.size;++i) { low=juce::jmin(low,popupDisplay.notes.notes[static_cast<size_t>(i)]); high=juce::jmax(high,popupDisplay.notes.notes[static_cast<size_t>(i)]); }
+    }
+    while(low>0 && juce::MidiMessage::isMidiNoteBlack(low)) --low;
+    while(high<127 && juce::MidiMessage::isMidiNoteBlack(high)) ++high;
+    if(!force && low==keyboardLow && high==keyboardHigh) return;
+    keyboardLow=low; keyboardHigh=high;
+    int whites=0; for(int note=low;note<=high;++note) if(!juce::MidiMessage::isMidiNoteBlack(note)) ++whites;
+    const float width=static_cast<float>(keyboard.getWidth()-keyboard.getScrollButtonWidth()*2-2)/static_cast<float>(juce::jmax(1,whites));
+    keyboard.setKeyWidth(juce::jmax(10.0f,width)); keyboard.setLowestVisibleKey(low);
 }

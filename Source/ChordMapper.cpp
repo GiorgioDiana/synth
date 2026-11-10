@@ -16,6 +16,7 @@ void Mapper::clearTracking() noexcept
     playedNotes = Notes {};
     modeKnown = false;
     previousEnabled = false;
+    previousLayout = 0;
 }
 
 void Mapper::prepare()
@@ -26,12 +27,12 @@ void Mapper::prepare()
     clearTracking();
 }
 
-int Mapper::activeSlots() const noexcept
+std::uint64_t Mapper::activeSlots() const noexcept
 {
-    int mask = 0;
+    std::uint64_t mask = 0;
     for(int slot = 0; slot < bankSize; ++slot)
         if(slotOwners[static_cast<size_t>(slot)] != 0)
-            mask |= 1 << slot;
+            mask |= std::uint64_t{1} << slot;
     return mask;
 }
 
@@ -87,10 +88,13 @@ void Mapper::pressTrigger(int channelIndex, int inputNote, juce::uint8 velocity,
     releaseTrigger(channelIndex, inputNote, output, samplePosition, 0);
 
     Notes generated;
-    if(mapping.enabled)
-        generated = resolve(mapping.bank, inputNote % bankSize, mapping.key,
-                            mapping.voicing, inputNote / 12 - 4 + mapping.registerShift);
-    else
+    const bool legacy=mapping.layout==1;
+    const bool mapped=mapping.enabled && (legacy || (inputNote>=firstTrigger && inputNote<=SixthChords::lastTrigger));
+    const int slot=legacy ? inputNote%legacyBankSize : inputNote-firstTrigger;
+    if(mapped) {
+        if(legacy) generated=resolveLegacy(mapping.bank,slot,mapping.key,mapping.voicing,inputNote/12-4+mapping.registerShift);
+        else generated=resolve(mapping.bank,slot,mapping.key,mapping.voicing,mapping.registerShift);
+    } else
     {
         generated.notes[0] = inputNote;
         generated.size = 1;
@@ -114,14 +118,15 @@ void Mapper::pressTrigger(int channelIndex, int inputNote, juce::uint8 velocity,
         return;
 
     trigger.active = true;
-    if(mapping.enabled)
+    if(mapped)
     {
-        trigger.chordSlot = inputNote % bankSize;
+        trigger.chordSlot = slot;
         ++slotOwners[static_cast<size_t>(trigger.chordSlot)];
         lastPlayedSlot = trigger.chordSlot;
         lastPlayedTrigger = inputNote;
         playedMapping = mapping;
         playedNotes = trigger.generated;
+        ++playedGeneration;
     }
 
     auto& channelOwners = owners[static_cast<size_t>(channelIndex)];
@@ -147,10 +152,11 @@ void Mapper::process(const juce::MidiBuffer& input, juce::MidiBuffer& output,
     output.clear();
     // Mode switching must release notes played in the previous mode. Tracking
     // single-note bypass input makes both directions safe, including held keys.
-    if(modeKnown && previousEnabled != mapping.enabled)
+    if(modeKnown && (previousEnabled != mapping.enabled || previousLayout != mapping.layout))
         reset(output, 0);
     modeKnown = true;
     previousEnabled = mapping.enabled;
+    previousLayout = mapping.layout;
 
     for(const auto metadata : input)
     {
@@ -174,7 +180,8 @@ void Mapper::process(const juce::MidiBuffer& input, juce::MidiBuffer& output,
                                status == 0x80 ? velocity : 0);
                 // In chord mode an unmatched input off must never terminate a
                 // common tone currently owned by some other mapped trigger.
-                if(!owned && !mapping.enabled)
+                if(!owned && owners[static_cast<size_t>(channel)][static_cast<size_t>(note)]==0
+                   && (!mapping.enabled || (mapping.layout==0 && (note<firstTrigger || note>SixthChords::lastTrigger))))
                     output.addEvent(bytes, size, metadata.samplePosition);
             }
         }

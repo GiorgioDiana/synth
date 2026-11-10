@@ -13,6 +13,7 @@ struct Mapping {
     int key = 0;
     int voicing = 0;
     int registerShift = 0;
+    int layout = 0; // 0: Full C1-C5; 1: legacy repeating twelve.
 };
 
 // Owns note lifetimes independently of the currently selected chord palette.
@@ -38,7 +39,8 @@ public:
     int lastTrigger() const noexcept { return lastPlayedTrigger; }
     const Mapping& lastMapping() const noexcept { return playedMapping; }
     Notes lastNotes() const noexcept { return playedNotes; }
-    int activeSlots() const noexcept;
+    std::uint64_t activeSlots() const noexcept;
+    unsigned generation() const noexcept { return playedGeneration; }
 
 private:
     struct Trigger {
@@ -61,8 +63,10 @@ private:
     int lastPlayedTrigger = -1;
     Mapping playedMapping;
     Notes playedNotes;
+    unsigned playedGeneration = 0;
     bool modeKnown = false;
     bool previousEnabled = false;
+    int previousLayout = 0;
 };
 
 }

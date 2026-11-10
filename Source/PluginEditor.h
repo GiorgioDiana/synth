@@ -32,6 +32,23 @@ private:
     private:
         SixthEditor& owner;
     };
+    class PerformanceKeyboard final : public juce::MidiKeyboardComponent
+    {
+    public:
+        explicit PerformanceKeyboard(SixthProcessor& p) : MidiKeyboardComponent(p.keyboard,horizontalKeyboard), processor(p) {}
+        void drawWhiteNote(int,juce::Graphics&,juce::Rectangle<float>,bool,bool,juce::Colour,juce::Colour) override;
+        void drawBlackNote(int,juce::Graphics&,juce::Rectangle<float>,bool,bool,juce::Colour) override;
+    private:
+        SixthProcessor& processor;
+    };
+    class ChordPopup final : public juce::Component
+    {
+    public:
+        explicit ChordPopup(SixthEditor& e) : owner(e) { setInterceptsMouseClicks(false,false); }
+        void paint(juce::Graphics& g) override { owner.paintChordPopup(g,getLocalBounds()); }
+    private:
+        SixthEditor& owner;
+    };
     class ChordPad final : public juce::Component, public juce::SettableTooltipClient
     {
     public:
@@ -41,10 +58,12 @@ private:
         void mouseDown(const juce::MouseEvent&) override;
         void mouseUp(const juce::MouseEvent&) override { release(); }
         void release();
+        void setSlot(int s) { release(); slot=s; }
         bool held = false;
     private:
         SixthEditor& owner;
         int slot;
+        int heldTrigger=-1;
     };
     struct Control
     {
@@ -64,7 +83,14 @@ private:
     void rebuildChordBanks(bool followCurrent);
     void paintChordPage(juce::Graphics&);
     void paintChordPad(juce::Graphics&, int, juce::Rectangle<int>, bool);
-    void playChordPad(int, bool);
+    void playChordTrigger(int, bool);
+    void refreshChordPads();
+    void selectChordPage(int);
+    void paintChordPopup(juce::Graphics&,juce::Rectangle<int>);
+    void updateKeyboardViewport(bool);
+    int currentChordLayout() const;
+    int triggerForSlot(int) const;
+    bool chordSlotActive(int) const;
     void releaseChordPads();
     juce::String chordNotes(const SixthChords::Notes&) const;
     static juce::String inputNoteName(int);
@@ -87,15 +113,24 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> retriggerAttachment;
     juce::TextButton synthView {"SYNTH"}, chordView {"CHORDS"};
     juce::TextButton chordEnable {"CHORD MODE OFF"}, panic {"PANIC"};
-    juce::ComboBox chordCategory, chordBanks, chordKey, chordVoicing, chordRegister;
+    juce::ComboBox chordCategory, chordBanks, chordKey, chordVoicing, chordRegister, chordLayout, chordPage;
+    juce::TextButton followChordInput {"FOLLOW MIDI"};
     juce::StringArray chordCategories;
-    std::array<std::unique_ptr<ChordPad>, 12> chordPads;
+    std::array<std::unique_ptr<ChordPad>, 13> chordPads;
     std::vector<juce::Component*> synthComponents, chordComponents;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> chordEnableAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> chordKeyAttachment, chordVoicingAttachment, chordRegisterAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> chordKeyAttachment, chordVoicingAttachment, chordRegisterAttachment, chordLayoutAttachment;
     bool chordPageVisible = false;
     int lastDisplayedBank = -1;
-    juce::MidiKeyboardComponent keyboard;
+    int chordOctavePage=0, displayedChordLayout=-1;
+    unsigned seenChordGeneration=0;
+    double chordPopupUntil=0;
+    SixthProcessor::ChordDisplay popupDisplay;
+    ChordPopup chordPopup {*this};
+    PerformanceKeyboard keyboard;
+    std::array<bool,128> previousRawNotes {};
+    int keyboardLow=24,keyboardHigh=72;
+    bool keyboardViewportPending=false;
     juce::TooltipWindow tooltips {this, 650};
     float meter = 0.0f;
     bool midiActive = false;
