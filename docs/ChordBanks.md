@@ -8,19 +8,19 @@ Each bank is an original style-inspired palette, not a transcription of a named 
 
 The tables use **Key C, Written voicing and neutral Register**. Each `input: chord` pair is one trigger. C1 is MIDI24, C3 is MIDI48 and C5 is MIDI72; MIDI numbers avoid host octave-label differences. The input key does not dictate the output octave in Full mode—use Register to move the sounding voicing.
 
-| Browse page | Input MIDI | Main role |
+| Keyboard region | Input MIDI | Main role |
 | --- | --- | --- |
 | C1–B1 | 24–35 | Home chords, major/minor landings and a dominant exit |
 | C2–B2 | 36–47 | Predominants, cadences and turnarounds |
 | C3–B3 | 48–59 | The original bank-specific twelve-chord core |
 | C4–C5 | 60–72 | Borrowed colours, chromatic bridges and a final tonic |
 
-The last page has thirteen pads, including C5. These roles help exploration; they do not force a progression or restrict chords to one style. Outside MIDI24–72, Full mode plays ordinary individual notes, so you can add a melody above or below the mapped range.
+All 49 pads, including C5, appear together in one grid. These regions describe their harmonic roles rather than separate pages. Outside MIDI24–72, Full mode plays ordinary individual notes through MIDI, so you can add a melody above or below the mapped range. The on-screen keyboard stays fixed at C1–C5 while you play.
 
 ## Useful starting points
 
 - **Find a landing:** C1 is a rooted tonic; B1 is a dominant that leads back to it. C5 gives another tonic voicing. Minor/Picardy banks may offer a major ending.
-- **Mix major and minor:** A#1 offers the parallel tonic colour, while the upper page adds borrowed chords and approaches.
+- **Mix major and minor:** A#1 offers the parallel tonic colour, while the upper keyboard region adds borrowed chords and approaches.
 - **Try chorale I:** C3 → D#3 → E3 → C3 gives C → F → G7 → C; C1 or C5 is also available as a clear landing.
 - **Try rootless jazz:** In Evans / Rootless Major A, D3 → D#3 → C3 → B3 gives Dm9 → G13 → Cmaj9 → C6/9. The new surrounding ranges also provide rooted alternatives.
 
@@ -558,6 +558,6 @@ Funk / Neo-soul — Funk/neo-soul core with clear homes, ii-V routes, backdoors,
 
 Written preserves each chosen chord’s curated spacing. Close compacts its existing voices; Open spreads alternate voices. Drop2 lowers the second-highest voice. Rotate1/2 move existing low voices above the others; these are rotations, not a claim about harmonic inversion numbers. All modes preserve the chord tones and doubled voices. At MIDI limits, complete voicings shift by octaves rather than collapsing notes.
 
-**Legacy12** retains the v0.3 twelve-slot map and its octave transpositions. Existing v0.3 sessions select it automatically so recorded trigger notes keep their old harmony. The central C3–B3 core matches between layouts, but Full gives the other octaves their own harmonic choices. Key, Voicing and Register work in either layout.
+Projects saved before v0.4.1 open with the full 49-key map. **Legacy12** is an explicit compatibility choice for replaying the v0.3 twelve-slot map and its octave transpositions; a choice saved in v0.4.1 is recalled. Selecting a different bank enables its full map. The central C3–B3 core matches between layouts. Key, Voicing and Register work in either layout.
 
 The Sound Patch browser changes timbre independently from harmony selection. Held keys release the chord captured when they were pressed, including across bank changes; common tones can remain held until their last owner releases.

@@ -306,17 +306,21 @@ int main(int argc,char** argv) {
             }
             std::unique_ptr<juce::AudioProcessorEditor> editor(previewProcessor->createEditor());
             check(editor && editor->getWidth()>=800 && editor->getHeight()>=400,"Editor construction failed");
+            if(argc>7 && juce::String(argv[7])=="small") editor->setSize(900,600);
             if(chordPreviewMode) {
                 const int input=argc>6 ? juce::jlimit(24,72,juce::String(argv[6]).getIntValue()) : 48;
                 juce::MidiBuffer trigger; trigger.addEvent(juce::MidiMessage::noteOn(1,input,0.8f),0);
                 render(*chordPreview,40,256,trigger);
-                juce::Thread::sleep(70);
-                juce::Timer::callPendingTimersSynchronously();
                 auto* popup=editor->findChildWithID("chordPopup");
                 // The popup lives in the scaled panel rather than at the editor root.
                 if(popup==nullptr)
                     for(auto* child:editor->getChildren())
                         if((popup=child->findChildWithID("chordPopup"))!=nullptr) break;
+                const auto deadline=juce::Time::getMillisecondCounterHiRes()+1000.0;
+                while(popup!=nullptr && !popup->isVisible() && juce::Time::getMillisecondCounterHiRes()<deadline) {
+                    juce::Thread::sleep(10);
+                    juce::Timer::callPendingTimersSynchronously();
+                }
                 check(popup!=nullptr && popup->isVisible(),"Live chord feedback did not appear");
             }
             juce::Image image(juce::Image::RGB,editor->getWidth(),editor->getHeight(),true);

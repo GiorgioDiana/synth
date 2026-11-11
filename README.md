@@ -20,9 +20,9 @@ The sound controls include:
 
 Factory patches cover strings, bass, brass, plucks, pads, leads, resonant steps and organ. The voice oscillators run at twice the output rate and use PolyBLEP saw/pulse waveforms. DAW sessions save every control and the selected factory patch. Existing v0.1 parameter IDs and order are retained; old shared-envelope sessions are migrated into matching amp/filter envelopes. Expanded chorus/drift processing means this is not a bit-for-bit reconstruction of the old render. Hardware SysEx, arpeggiator, mono/glide/unison modes and user-preset file import/export are not implemented yet. Chord performance is described below.
 
-## Chord performance (v0.4)
+## Chord performance (v0.4.1)
 
-Open **CHORDS**, choose **Full C1–C5** layout, select a style/bank and enable **CHORD MODE**. The full range **C1 through C5, inclusive (MIDI 24–72)** contains 49 mapped choices across a broader harmonic palette—not twelve chords repeated by octave. The four pad pages contain 12, 12, 12 and 13 keys. Hold a pad with the mouse or play the corresponding key on a MIDI controller. Notes outside that range play normally, so you can add a melody above or below it.
+Open **CHORDS**, select a style/bank and enable **CHORD MODE**. All **49 chord pads are visible together**, covering **C1 through C5, inclusive (MIDI 24–72)**. Each key has its own written voicing across the bank's broader harmonic palette. Hold a pad with the mouse or play its key on a MIDI controller. Selecting a different bank enables its full 49-key map. Notes outside that range still play as individual melody notes through MIDI.
 
 There are **48 banks × 49 keys = 2,352 mapped chord slots**, with six voicing modes and transposition to all twelve keys. Shared chords and different voicings intentionally recur; this is a slot count, not a claim that every harmony is unique. Styles include 10 funk/neo-soul banks, 6 Bill Evans-inspired jazz banks, 8 functional jazz banks, 8 Bach-inspired chorale banks, 8 Chopin-inspired Romantic banks, 4 gospel/soul banks and 4 modal/cinematic banks. See the [full mapping catalogue](docs/ChordBanks.md).
 
@@ -39,11 +39,13 @@ For an immediate example, choose **Bach / Chorale → Chorale I - Major Cadences
 - A **split colour** marks a key that is both input and output.
 - The chord/input readout identifies the actual played chord and its trigger note/MIDI number, whether you use pads or a MIDI controller, on either the Synth or Chords page.
 
+The keyboard always displays the complete C1–C5 chord range. Its scale stays fixed while you play, release notes, use the sustain pedal or change registers. Generated notes outside that displayed range are listed in the chord readout. Resize the plugin window to enlarge the whole panel.
+
 Harmony banks remain independent from the **Sound Patch** browser: changing timbre preserves the bank, key, voicing and mode. DAW sessions save both. Held keys release the chord captured when they were pressed, even across a bank change; shared common tones remain held until their last input owner releases. Sustain, pitch bend, mod wheel and MIDI channels are preserved. **PANIC** stops held/sustained notes; switching chord mode releases existing voices. Chord mode provides up to 24 voices; normal mode retains six. Extreme overlap can still steal older voices.
 
 ### Existing sessions
 
-**Legacy12** preserves the v0.3 twelve-slot layout and its octave transpositions. Previously saved chord sessions reopen in Legacy12 so recorded trigger notes retain their original harmony. **Select Full C1–C5 in an existing project to use the new expanded maps.** The original central octave matches in both layouts. Chord mode remains off when restoring older non-chord sessions, and existing AU parameter order is retained.
+Projects saved before v0.4.1 now open with **Full C1–C5**, including projects that previously selected Legacy12 automatically. The original central C3–B3 octave is preserved; other trigger octaves now select the expanded harmonies. **Legacy12** remains an explicit compatibility choice for replaying the old twelve-slot octave pattern. A Legacy12 choice saved in v0.4.1 is recalled, while selecting a different bank switches to its full 49-key map. Chord mode remains off when restoring older non-chord sessions, and existing AU parameter order is retained.
 
 These are original style-inspired harmonic palettes, not transcriptions of named works or performances. Chorale banks retain a four-part core but can include colours from other styles; arbitrary key order is not an automatic counterpoint composition system. Rootless jazz choices intentionally leave room for a bass part. Chord expansion happens inside Sixth: the DAW normally records incoming trigger keys, not an exported generated-MIDI stream.
 

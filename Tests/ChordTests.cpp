@@ -525,97 +525,156 @@ juce::MouseEvent leftClickEvent(juce::Component& component)
 void testChordPadLifecycle()
 {
     SixthProcessor processor;
-    setParameter(processor, "attack", 0.001f);
-    setParameter(processor, "chorus", 0);
-    processor.prepareToPlay(48000, 256);
+    setParameter(processor,"attack",0.001f);
+    setParameter(processor,"chorus",0);
+    processor.prepareToPlay(48000,256);
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
-    require(editor != nullptr, "chord pad test could not construct the actual editor");
-    auto* chordView = findViewButton(*editor, "CHORDS");
-    auto* synthView = findViewButton(*editor, "SYNTH");
+    require(editor != nullptr,"chord pad test could not construct the actual editor");
+    auto* chordView=findViewButton(*editor,"CHORDS");
+    auto* synthView=findViewButton(*editor,"SYNTH");
     require(chordView != nullptr && static_cast<bool>(chordView->onClick)
             && synthView != nullptr && static_cast<bool>(synthView->onClick),
-            "synth/chord page navigation is unavailable");
+            "synth/chord view navigation is unavailable");
     chordView->onClick();
-    auto* page = dynamic_cast<juce::ComboBox*>(findComponent(*editor, [](juce::Component& component)
-    {
-        return component.getComponentID() == "chordPage" || component.getName() == "Chord octave page";
-    }));
-    require(page != nullptr, "the 49-key chord page selector is unavailable");
-    page->setSelectedId(3,juce::sendNotificationSync); // Select the visible C3-B3 group.
-    auto* pad = findComponent(*editor, [](juce::Component& component)
-    {
-        return component.getName() == "Chord pad C3";
-    });
-    require(pad != nullptr && pad->isVisible(), "the C3 chord pad is not visible on the chord page");
-    const auto renderBlock = [&]
-    {
+    const auto findPad=[&](int trigger) {
+        return findComponent(*editor,[&](juce::Component& component) {
+            return component.getComponentID()=="chordPad"+juce::String(trigger);
+        });
+    };
+    // No octave page selector is needed: all 49 mapped keys must be visible together.
+    for (int trigger=SixthChords::firstTrigger;trigger<=SixthChords::lastTrigger;++trigger) {
+        auto* pad=findPad(trigger);
+        require(pad != nullptr && pad->isVisible(),
+                "the complete chord grid is missing visible MIDI "+std::to_string(trigger));
+        require(pad->getParentComponent() != nullptr
+                && pad->getParentComponent()->getLocalBounds().contains(pad->getBounds()),
+                "a supposedly visible chord pad is clipped outside its containing panel");
+    }
+    const auto renderBlock=[&] {
         juce::AudioBuffer<float> audio(2,256);
         juce::MidiBuffer emptyInput;
         processor.processBlock(audio,emptyInput);
-        float peak = 0.0f;
-        for (int channel = 0; channel < 2; ++channel)
-            for (int sample = 0; sample < audio.getNumSamples(); ++sample)
-            {
-                const auto value = audio.getSample(channel,sample);
-                require(std::isfinite(value), "GUI chord pad produced non-finite audio");
-                peak = std::max(peak,std::abs(value));
+        float peak=0.0f;
+        for (int channel=0;channel<2;++channel)
+            for (int sample=0;sample<audio.getNumSamples();++sample) {
+                const auto value=audio.getSample(channel,sample);
+                require(std::isfinite(value),"GUI chord pad produced non-finite audio");
+                peak=std::max(peak,std::abs(value));
             }
         return peak;
     };
-    // Exercise the component's virtual mouse API rather than calling editor-private helpers.
-    const auto generation = processor.chordGeneration.load();
-    pad->mouseDown(leftClickEvent(*pad));
-    const auto peak = renderBlock();
-    require(processor.parameters.getRawParameterValue("chordMode")->load() == 1.0f
-            && processor.activeChordSlots.load() == slotMask(24) && peak > 1.0e-6f,
-            "pressing a GUI pad did not enable chord mode and render its chord");
-    require(processor.chordGeneration.load() == generation+1, "GUI pad did not produce a new visual trigger generation");
-    pad->mouseUp(leftClickEvent(*pad));
-    renderBlock();
-    require(processor.activeChordSlots.load() == 0, "releasing a GUI pad left a held chord");
-
-    // The last keyboard region has thirteen pads: C4-B4 plus the C5 endpoint.
-    page->setSelectedId(4,juce::sendNotificationSync);
-    auto* edgePad=findComponent(*editor,[](juce::Component& component) {
-        return component.getComponentID()=="chordPad72";
-    });
-    require(edgePad!=nullptr && edgePad->isVisible(),"the final page does not expose its thirteenth C5 pad");
-    edgePad->mouseDown(leftClickEvent(*edgePad));
-    renderBlock();
-    require(processor.activeChordSlots.load()==slotMask(48)
-            && processor.getChordDisplay().trigger==72,
-            "the C5 pad did not trigger the 49th chord slot");
-    edgePad->mouseUp(leftClickEvent(*edgePad));
-    renderBlock();
-    require(processor.activeChordSlots.load()==0,"the final C5 pad did not release its chord");
-    edgePad->mouseDown(leftClickEvent(*edgePad));
-    renderBlock();
-    require(processor.activeChordSlots.load()==slotMask(48),"the C5 pad did not retrigger before page change");
-    page->setSelectedId(3,juce::sendNotificationSync);
-    renderBlock();
-    require(processor.activeChordSlots.load()==0,"changing octave pages left the held C5 chord sounding");
-    pad=findComponent(*editor,[](juce::Component& component) {
-        return component.getComponentID()=="chordPad48";
-    });
-    require(pad!=nullptr && pad->isVisible(),"returning to C3 did not restore its pad");
-
-    pad->mouseDown(leftClickEvent(*pad));
-    renderBlock();
-    require(processor.activeChordSlots.load() == slotMask(24), "GUI pad did not retrigger before page switch");
+    // Test the low, middle and high endpoints through the components' public mouse API.
+    for (int trigger:{24,48,72}) {
+        auto* pad=findPad(trigger);
+        const auto generation=processor.chordGeneration.load();
+        pad->mouseDown(leftClickEvent(*pad));
+        const auto peak=renderBlock();
+        require(processor.parameters.getRawParameterValue("chordMode")->load()==1.0f
+                && processor.activeChordSlots.load()==slotMask(trigger-24) && peak>1.0e-6f,
+                "pressing a GUI pad did not enable chord mode and render its chord");
+        require(processor.chordGeneration.load()==generation+1
+                && processor.getChordDisplay().trigger==trigger,
+                "GUI chord feedback did not identify the played key");
+        pad->mouseUp(leftClickEvent(*pad));renderBlock();
+        require(processor.activeChordSlots.load()==0,"releasing a GUI pad left a held chord");
+    }
+    auto* highPad=findPad(72);
+    highPad->mouseDown(leftClickEvent(*highPad));renderBlock();
+    require(processor.activeChordSlots.load()==slotMask(48),"the C5 pad did not retrigger before changing views");
     synthView->onClick();
-    require(!pad->isVisible(), "synth navigation did not hide the chord pads");
+    require(!highPad->isVisible(),"synth navigation did not hide the chord grid");
     renderBlock();
-    require(processor.activeChordSlots.load() == 0, "hiding the chord page left its pressed pad sounding");
+    require(processor.activeChordSlots.load()==0,"hiding the chord grid left its pressed C5 pad sounding");
 
     chordView->onClick();
-    require(pad->isVisible(), "chord navigation did not restore the chord pads");
-    pad->mouseDown(leftClickEvent(*pad));
-    renderBlock();
-    require(processor.activeChordSlots.load() == slotMask(24), "GUI pad did not trigger before editor destruction");
-    editor.reset();
-    renderBlock();
-    require(processor.activeChordSlots.load() == 0, "destroying an editor left its pressed chord pad held");
-    std::cout << "PASS actual GUI chord-pad mouse down/up, page hiding and editor-destruction lifetimes\n";
+    for (int trigger=24;trigger<=72;++trigger)
+        require(findPad(trigger)->isVisible(),"returning to chords did not restore the complete grid");
+    highPad->mouseDown(leftClickEvent(*highPad));renderBlock();
+    require(processor.activeChordSlots.load()==slotMask(48),"the C5 pad did not trigger before editor destruction");
+    editor.reset();renderBlock();
+    require(processor.activeChordSlots.load()==0,"destroying an editor left its pressed chord pad held");
+    std::cout<<"PASS all 49 visible GUI pads, C1/C3/C5 mouse controls, view hiding and editor destruction\n";
+}
+
+void testFixedKeyboardGeometry()
+{
+    SixthProcessor processor;
+    setParameter(processor,"chordMode",1);
+    setParameter(processor,"chordLayout",0);
+    processor.prepareToPlay(48000,256);
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    require(editor != nullptr,"keyboard geometry test could not construct the editor");
+    auto* keyboard=dynamic_cast<juce::MidiKeyboardComponent*>(findComponent(*editor,[](juce::Component& component) {
+        return component.getComponentID()=="performanceKeyboard";
+    }));
+    auto* popup=findComponent(*editor,[](juce::Component& component) {
+        return component.getComponentID()=="chordPopup";
+    });
+    require(keyboard != nullptr && popup != nullptr,"keyboard/popup components are unavailable for interaction testing");
+    const auto keyWidth=keyboard->getKeyWidth();
+    const auto lowest=keyboard->getLowestVisibleKey();
+    const auto bounds=keyboard->getBounds();
+    require(keyboard->getRangeStart()==24 && keyboard->getRangeEnd()==72 && lowest==24,
+            "the performance keyboard is not fixed to C1-C5");
+    require(keyWidth>=24.0f,"the fixed-range keyboard has not retained comfortably sized keys");
+    for (int note:{24,72}) {
+        const auto keyBounds=keyboard->getRectangleForKey(note);
+        require(keyBounds.getX()>=-0.01f && keyBounds.getRight()<=keyboard->getWidth()+0.01f,
+                "a C1/C5 endpoint is clipped out of the fixed keyboard");
+    }
+    const auto assertFixed=[&] {
+        require(keyboard->getRangeStart()==24 && keyboard->getRangeEnd()==72
+                && keyboard->getLowestVisibleKey()==lowest
+                && std::abs(keyboard->getKeyWidth()-keyWidth)<0.0001f
+                && keyboard->getBounds()==bounds,
+                "MIDI notes or chord feedback automatically zoomed/scrolled the fixed keyboard");
+    };
+    const auto processInput=[&](std::initializer_list<Event> input) {
+        juce::MidiBuffer midi;
+        for (const auto& event:input) midi.addEvent(event.message,event.position);
+        juce::AudioBuffer<float> audio(2,256);processor.processBlock(audio,midi);
+    };
+    const auto waitForPopup=[&](bool expectedVisible) {
+        // Timer dispatch is asynchronous even when the test drives callbacks on
+        // the message thread. Wait for observable behavior, not one guessed tick.
+        const double deadline=juce::Time::getMillisecondCounterHiRes()+1000.0;
+        do {
+            juce::Timer::callPendingTimersSynchronously();
+            assertFixed();
+            if (popup->isVisible()==expectedVisible) return true;
+            juce::Thread::sleep(10);
+        } while (juce::Time::getMillisecondCounterHiRes()<deadline);
+        juce::Timer::callPendingTimersSynchronously();
+        assertFixed();
+        return popup->isVisible()==expectedVisible;
+    };
+    for (const auto input:std::array<std::pair<int,int>,2>{{{0,24},{127,72}}}) {
+        processInput({on(input.first),on(input.second,1)});
+        require(waitForPopup(true),"the editor timer did not show feedback for a new mapped chord");
+        assertFixed();
+        processor.requestPanic();processInput({});
+        require(waitForPopup(false),"panic did not clear the timed chord popup");
+        assertFixed();
+    }
+    // A higher selected register changes the sounding pitches, not the keyboard viewport.
+    setParameter(processor,"chordKey",11);setParameter(processor,"chordRegister",4);
+    processInput({on(60)});
+    require(waitForPopup(true),"transposed chord feedback did not run through the editor timer");
+    assertFixed();
+    processor.requestPanic();processInput({});
+    require(waitForPopup(false),"panic did not clear transposed chord feedback");
+    assertFixed();
+    auto* bank=dynamic_cast<juce::ComboBox*>(findComponent(*editor,[](juce::Component& component) {
+        return component.getComponentID()=="chordBank";
+    }));
+    require(bank != nullptr,"the harmony bank browser is unavailable");
+    setParameter(processor,"chordLayout",1);
+    bank->setSelectedId(2,juce::sendNotificationSync);
+    require(processor.parameters.getRawParameterValue("chordBank")->load()==1
+            && processor.parameters.getRawParameterValue("chordLayout")->load()==0,
+            "selecting a new harmony bank retained the twelve-chord compatibility map");
+    assertFixed();
+    std::cout<<"PASS fixed C1-C5 keyboard geometry during low/high MIDI, transposed chords, popups and bank selection\n";
 }
 
 void testProcessorIntegration()
@@ -715,29 +774,53 @@ void testProcessorIntegration()
     }
     require(restored.parameters.getParameter("chordLayout")->getVersionHint()==4,
             "the new keyboard layout would reorder existing AU automation");
-    // A saved v0.3 performance has twelve-slot MIDI semantics, even though new
-    // sessions now start with Full49. Missing layout must not reinterpret its notes.
     const auto xml=juce::AudioProcessor::getXmlFromBinary(state.getData(),static_cast<int>(state.getSize()));
-    require(xml != nullptr,"could not inspect host state for legacy layout regression");
-    auto oldTree=juce::ValueTree::fromXml(*xml);
-    oldTree.setProperty("schema",3,nullptr);
-    oldTree.removeChild(oldTree.getChildWithProperty("id","chordLayout"),nullptr);
-    juce::MemoryBlock oldState;
-    juce::AudioProcessor::copyXmlToBinary(*oldTree.createXml(),oldState);
+    require(xml != nullptr,"could not inspect host state for layout migration regression");
+    // Earlier releases either lacked the field or persisted an automatic Legacy
+    // selection. Both must reopen the visible full map after this UI correction.
+    for (int oldSchema:{3,4}) {
+        auto oldTree=juce::ValueTree::fromXml(*xml);
+        oldTree.setProperty("schema",oldSchema,nullptr);
+        auto layoutChild=oldTree.getChildWithProperty("id","chordLayout");
+        if (oldSchema==3) oldTree.removeChild(layoutChild,nullptr);
+        else layoutChild.setProperty("value",1.0f,nullptr);
+        juce::MemoryBlock oldState;
+        juce::AudioProcessor::copyXmlToBinary(*oldTree.createXml(),oldState);
+        SixthProcessor migrated;
+        migrated.setStateInformation(oldState.getData(),static_cast<int>(oldState.getSize()));
+        require(migrated.parameters.getRawParameterValue("chordLayout")->load()==0,
+                "an earlier saved session reopened the hidden twelve-pad layout");
+        migrated.prepareToPlay(48000,256);
+        juce::MidiBuffer migratedTrigger;migratedTrigger.addEvent(on(60).message,0);
+        juce::AudioBuffer<float> migratedAudio(2,256);
+        migrated.processBlock(migratedAudio,migratedTrigger);
+        const auto displayed=migrated.getChordDisplay();
+        const auto expected=SixthChords::resolve(static_cast<int>(SixthChords::banks().size()-1),36,7,4,1);
+        require(displayed.layout==0 && displayed.slot==36 && displayed.trigger==60
+                && pitches(displayed.notes)==pitches(expected),
+                "a migrated session did not actually render the full-map chord for its key");
+    }
+    // An intentional Legacy selection made after this correction remains valid.
+    setParameter(chordProcessor,"chordLayout",1);
+    juce::MemoryBlock intentionalLegacy;
+    chordProcessor.getStateInformation(intentionalLegacy);
+    const auto currentXml=juce::AudioProcessor::getXmlFromBinary(intentionalLegacy.getData(),static_cast<int>(intentionalLegacy.getSize()));
+    require(currentXml != nullptr && currentXml->getIntAttribute("schema")==5,
+            "current host state does not identify the corrected layout schema");
     SixthProcessor legacy;
-    legacy.setStateInformation(oldState.getData(),static_cast<int>(oldState.getSize()));
+    legacy.setStateInformation(intentionalLegacy.getData(),static_cast<int>(intentionalLegacy.getSize()));
     require(legacy.parameters.getRawParameterValue("chordLayout")->load()==1,
-            "a v0.3 session was silently reinterpreted with the new 49-key map");
+            "a current explicit Legacy selection was not preserved");
     legacy.prepareToPlay(48000,256);
-    juce::MidiBuffer legacyTrigger; legacyTrigger.addEvent(on(49).message,0);
+    juce::MidiBuffer legacyTrigger;legacyTrigger.addEvent(on(60).message,0);
     juce::AudioBuffer<float> legacyAudio(2,256);
     legacy.processBlock(legacyAudio,legacyTrigger);
-    const auto displayed=legacy.getChordDisplay();
-    const auto legacyExpected=SixthChords::resolveLegacy(static_cast<int>(SixthChords::banks().size()-1),1,7,4,1);
-    require(displayed.layout==1 && displayed.slot==1 && displayed.trigger==49
-            && pitches(displayed.notes)==pitches(legacyExpected),
-            "migrated session did not actually render its old twelve-key chord selection");
-    std::cout << "PASS processor chord rendering, independent presets, Full49 recall and v0.3 layout migration\n";
+    const auto legacyDisplay=legacy.getChordDisplay();
+    const auto legacyExpected=SixthChords::resolveLegacy(static_cast<int>(SixthChords::banks().size()-1),0,7,4,2);
+    require(legacyDisplay.layout==1 && legacyDisplay.slot==0 && legacyDisplay.trigger==60
+            && pitches(legacyDisplay.notes)==pitches(legacyExpected),
+            "an explicit current Legacy state did not render its intended octave mapping");
+    std::cout<<"PASS processor chord rendering, independent presets, Full49 migration and explicit Legacy recall\n";
 }
 }
 
@@ -750,4 +833,5 @@ void runChordTests()
     testProcessorIntegration();
     testSoundingFeedback();
     testChordPadLifecycle();
+    testFixedKeyboardGeometry();
 }

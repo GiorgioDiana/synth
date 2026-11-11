@@ -338,7 +338,7 @@ void SixthProcessor::setCurrentProgram(int index) {
 }
 juce::AudioProcessorEditor* SixthProcessor::createEditor() { return new SixthEditor(*this); }
 void SixthProcessor::getStateInformation(juce::MemoryBlock& data) {
-    auto state=parameters.copyState(); state.setProperty("program",selectedProgram.load(),nullptr); state.setProperty("schema",4,nullptr);
+    auto state=parameters.copyState(); state.setProperty("program",selectedProgram.load(),nullptr); state.setProperty("schema",5,nullptr);
     auto xml=state.createXml(); copyXmlToBinary(*xml,data);
 }
 void SixthProcessor::setStateInformation(const void* data,int size) {
@@ -347,11 +347,17 @@ void SixthProcessor::setStateInformation(const void* data,int size) {
     auto state=juce::ValueTree::fromXml(*xml);
     const int schema=static_cast<int>(state.getProperty("schema",1));
     const bool legacy=schema<2;
+    // Earlier releases silently selected the repeating map when loading old
+    // projects. Open those projects with the requested full keyboard instead.
+    // An explicit Legacy choice saved by this release can still be recalled.
+    if(schema<5) {
+        auto chordLayout=state.getChildWithProperty("id","chordLayout");
+        if(chordLayout.isValid()) chordLayout.setProperty("value",0.0f,nullptr);
+    }
     for(auto* base:getParameters()) {
         auto* parameter=dynamic_cast<juce::RangedAudioParameter*>(base);
         if(!parameter || state.getChildWithProperty("id",parameter->paramID).isValid()) continue;
         float raw=parameter->convertFrom0to1(parameter->getDefaultValue());
-        if(parameter->paramID=="chordLayout" && schema<4) raw=1.0f;
         if(legacy) {
             const juce::String id=parameter->paramID;
             if(id=="fattack" || id=="fdecay" || id=="fsustain" || id=="frelease") {
